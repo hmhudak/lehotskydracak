@@ -1,0 +1,59 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h2 style="font-family:'Marcellus', serif;" class="mb-4">Obrázky</h2>
+<p style="font-family:'Lato', sans-serif;">Zoznam nahratých obrázkov:</p>
+<table class="table" style="font-family:'Lato', sans-serif;">
+    <thead>
+        <tr>
+            <th>Názov súboru</th>
+            <th>Akcia</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for img in images %}
+        <tr>
+            <td><a href="#" class="image-link" data-img="{{ url_for('static', filename='uploads/' + img) }}">{{ img }}</a></td>
+            <td>
+                <button class="btn btn-sm btn-danger delete-image-btn" data-filename="{{ img }}"><i class="fas fa-trash"></i></button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Modal pre zobrazenie obrázka -->
+<div class="modal fade" id="imageFullModal2" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-fullscreen">
+    <div class="modal-content" style="background:rgba(0,0,0,0.8);">
+      <div class="modal-body text-center">
+        <img id="image-full-view2" src="" style="max-width:none; display:block; margin:0 auto;">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Zatvoriť</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal pre potvrdenie zmazania -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <form method="post" action="{{ url_for('delete_image') }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Zmazať obrázok</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zatvoriť"></button>
+        </div>
+        <div class="modal-body">
+          <p>Naozaj chcete zmazať obrázok <span id="delete-filename"></span>?</p>
+          <input type="hidden" name="filename" id="delete-filename-input" value="">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+          <button type="submit" class="btn btn-danger">Zmazať</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

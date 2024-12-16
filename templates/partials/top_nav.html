@@ -1,0 +1,17 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark-brown">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="{{ url_for('index') }}" style="font-family:'Marcellus', serif;">lohotskydracak</a>
+      <div class="d-flex">
+        {% if session.user %}
+          {% if session.user.role == 'Admin' %}
+            <a class="btn btn-sm btn-outline-light me-2" href="{{ url_for('list_images') }}"><i class="fas fa-images"></i> Obrázky</a>
+          {% endif %}
+          <span class="navbar-text me-2" style="font-family:'Lato', sans-serif;">
+            Prihlásený: {{ session.user.email }} ({{ session.user.role }})
+          </span>
+          <a class="btn btn-sm btn-outline-light" href="{{ url_for('logout') }}">Odhlásiť</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  

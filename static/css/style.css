@@ -1,0 +1,42 @@
+body {
+    margin:0;
+    padding:0;
+    font-family: 'Lato', sans-serif;
+}
+
+.bg-light-brown {
+    background: #f9f5e3; /* pergamen */
+}
+
+.bg-brown {
+    background: #5d4037; 
+}
+
+.bg-dark-brown {
+    background: #3e2723;
+}
+
+.navbar-brand {
+    font-family:'Marcellus', serif;
+}
+
+.card {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #ccc;
+    background: #f9f5e3;
+    font-family:'Lato', sans-serif;
+}
+
+.preview-box a, .page-content a {
+    color: blue;
+    text-decoration: underline;
+}
+
+/* Modal fullscreen pre obrázok */
+.modal-fullscreen {
+  width: 100vw;
+  height: 100vh;
+  margin:0;
+  padding:0;
+}

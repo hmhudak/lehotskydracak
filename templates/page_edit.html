@@ -1,0 +1,103 @@
+{% extends 'layout.html' %}
+{% block content %}
+{% if mode == 'edit' %}
+<h2 class="mb-4" style="font-family:'Marcellus', serif;">Upraviť stránku</h2>
+{% else %}
+<h2 class="mb-4" style="font-family:'Marcellus', serif;">Pridať novú stránku</h2>
+{% endif %}
+
+{% if error %}
+<p style="color:red;">{{ error }}</p>
+{% endif %}
+
+<form method="post" style="font-family:'Lato', sans-serif;">
+    <div class="mb-3">
+        <label class="form-label">Názov stránky:</label>
+        <input type="text" name="title" class="form-control" value="{{ page[0] if mode=='edit' else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Folder:</label>
+        <select name="folder_id" class="form-select">
+            {% for f_id, f_name in folders %}
+            <option value="{{ f_id }}" {% if mode=='edit' and page[1]==f_id %}selected{% endif %}>{{ f_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Viditeľnosť:</label>
+        <select name="visible_to" class="form-select">
+            {% if mode=='edit' %}
+            <option value="All" {% if page[3]=='All' %}selected{% endif %}>Všetci (Admin+Player)</option>
+            <option value="Admin" {% if page[3]=='Admin' %}selected{% endif %}>Len Admin</option>
+            {% else %}
+            <option value="All">Všetci (Admin+Player)</option>
+            <option value="Admin">Len Admin</option>
+            {% endif %}
+        </select>
+    </div>
+    
+    <div class="mb-3">
+        <label class="form-label">Obsah (Markdown):</label>
+        <div class="btn-group mb-2" role="group">
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="1"><i class="fas fa-heading"></i> H1</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="2">H2</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="3">H3</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="4">H4</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="bold"><i class="fas fa-bold"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="italic"><i class="fas fa-italic"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="hr">HR</button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="link"><i class="fas fa-link"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="image"><i class="fas fa-image"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="ul"><i class="fas fa-list-ul"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-dark" data-action="ol"><i class="fas fa-list-ol"></i></button>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <textarea id="markdown-input" name="content" class="form-control" rows="10">{{ page[2] if mode=='edit' else '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+                <div class="preview-box p-2 border" style="background:#fff; min-height:200px;" id="markdown-preview"></div>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Uložiť</button>
+</form>
+
+<div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-image"></i> Vložiť obrázok</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zatvoriť"></button>
+      </div>
+      <div class="modal-body">
+        <p>Vyberte možnosť:</p>
+        <div class="mb-3">
+            <label>URL obrázka (externý):</label>
+            <input type="text" class="form-control" id="image-url">
+        </div>
+        <div class="mb-3">
+            <label>Nahrať súbor z PC:</label>
+            <input type="file" class="form-control" id="image-file" accept="image/*">
+        </div>
+        <div class="mb-3">
+            <label>Scale (veľkosť v %):</label>
+            <input type="range" class="form-range" id="image-scale" min="10" max="100" value="100">
+            <span id="image-scale-value">100%</span>
+        </div>
+        <div class="mb-3">
+            <label>Caption (popis, nepovinné):</label>
+            <input type="text" class="form-control" id="image-caption">
+        </div>
+        <small>Ak je nahratý súbor, použije sa ten. Inak sa použije URL.</small>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+        <button type="button" class="btn btn-primary" id="insert-image-btn">Vložiť</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

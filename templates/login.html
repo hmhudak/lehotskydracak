@@ -1,0 +1,18 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h2 class="mb-4" style="font-family:'Marcellus', serif;">Prihlásenie</h2>
+<form method="post" style="font-family:'Lato', sans-serif;">
+    <div class="mb-3">
+        <label class="form-label">Email:</label>
+        <input type="text" name="email" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Heslo:</label>
+        <input type="password" name="password" class="form-control">
+    </div>
+    <input type="submit" value="Prihlásiť" class="btn btn-primary">
+</form>
+{% if error %}
+<p style="color:red;">{{ error }}</p>
+{% endif %}
+{% endblock %}
