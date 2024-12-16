@@ -1,14 +1,15 @@
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, g, jsonify
-from werkzeug.utils import secure_filename
 import markdown as md
 from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 app.secret_key = 'verysecretkey'
 
-DATABASE = os.path.join(os.path.dirname(__file__), 'data', 'pages.db')
+DATABASE_URL = os.environ.get('DATABASE_URL')  # Nastavíte na Rendere v env variables
+# Napr: DATABASE_URL=postgresql://pages_owner:M8cesI3RKlEY@ep-falling-mountain-a21vv6d2.eu-central-1.aws.neon.tech/pages?sslmode=require
 
 USERS = {
     "example1@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
@@ -19,46 +20,41 @@ USERS = {
 }
 
 def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-    return db
+    if not hasattr(g, 'db_conn'):
+        g.db_conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
+    return g.db_conn
 
 @app.teardown_appcontext
 def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+    if hasattr(g, 'db_conn'):
+        g.db_conn.close()
 
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    # Pre vytvaranie tabuliek
-    # Nova tabulka folders
+    # Vytvorenie tabuliek (Postgres)
     c.execute('''
     CREATE TABLE IF NOT EXISTS folders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT UNIQUE NOT NULL
-    )
+    );
     ''')
-    # Uprava pages tabulky: folder uz nebude text, ale foreign key:
     c.execute('''
     CREATE TABLE IF NOT EXISTS pages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT NOT NULL UNIQUE,
+        id SERIAL PRIMARY KEY,
+        title TEXT UNIQUE NOT NULL,
         folder_id INTEGER NOT NULL,
         content TEXT,
         visible_to TEXT NOT NULL,
-        created_at TEXT,
-        updated_at TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
-    )
+    );
     ''')
-    # Skontrolujeme, ci mame aspon jeden folder
+    # Skontrolujeme aspon jeden folder
     c.execute("SELECT COUNT(*) FROM folders")
     count = c.fetchone()[0]
     if count == 0:
-        # Vlozime defaultny folder
         c.execute("INSERT INTO folders (name) VALUES ('General')")
     conn.commit()
 
@@ -101,7 +97,6 @@ def process_images(html):
             style += ' max-width:100%;'
         img['style'] = style.strip()
 
-        # full size view
         img['data-fullsrc'] = img.get('src', '')
 
         if caption:
@@ -142,13 +137,16 @@ def index():
     c.execute("SELECT id, name FROM folders ORDER BY name")
     folder_rows = c.fetchall()
     folders = []
-    for f_id, f_name in folder_rows:
+    for f in folder_rows:
+        f_id = f['id']
+        f_name = f['name']
         if is_admin():
-            c.execute("SELECT title, id FROM pages WHERE folder_id=? ORDER BY title", (f_id,))
+            c.execute("SELECT title, id FROM pages WHERE folder_id=%s ORDER BY title", (f_id,))
         else:
-            c.execute("SELECT title, id FROM pages WHERE folder_id=? AND visible_to='All' ORDER BY title", (f_id,))
+            c.execute("SELECT title, id FROM pages WHERE folder_id=%s AND visible_to='All' ORDER BY title", (f_id,))
         pages = c.fetchall()
-        folders.append((f_id, f_name, pages))
+        pages_list = [(p['title'], p['id']) for p in pages]
+        folders.append((f_id, f_name, pages_list))
     return render_template('index.html', folders=folders)
 
 @app.route('/page/<int:page_id>')
@@ -157,15 +155,15 @@ def view_page(page_id):
         return redirect(url_for('login'))
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT title, folder_id, content, visible_to FROM pages WHERE id=?", (page_id,))
+    c.execute("SELECT title, folder_id, content, visible_to FROM pages WHERE id=%s", (page_id,))
     page = c.fetchone()
     if not page:
         return "Stránka neexistuje", 404
-    title, folder_id, content, visible_to = page
+    title, folder_id, content, visible_to = page['title'], page['folder_id'], page['content'], page['visible_to']
     if visible_to == 'Admin' and not is_admin():
         return "Nemáte oprávnenie zobraziť túto stránku.", 403
     
-    html_content = md.markdown(content)
+    html_content = md.markdown(content, extensions=['extra'])
     html_content = process_images(html_content)
 
     return render_template('page_view.html', title=title, content=html_content, page_id=page_id)
@@ -185,18 +183,17 @@ def add_page():
         content = request.form.get('content')
         visible_to = request.form.get('visible_to')
 
-        # skontrolujeme unikatny nazov
-        c.execute("SELECT COUNT(*) FROM pages WHERE title=?", (title,))
+        c.execute("SELECT COUNT(*) FROM pages WHERE title=%s", (title,))
         count = c.fetchone()[0]
         if count > 0:
             error = "Stránka s týmto názvom už existuje!"
         else:
-            c.execute("INSERT INTO pages (title, folder_id, content, visible_to, created_at, updated_at) VALUES (?,?,?,?,datetime('now'),datetime('now'))",
+            c.execute("INSERT INTO pages (title, folder_id, content, visible_to, created_at, updated_at) VALUES (%s,%s,%s,%s, NOW(), NOW())",
                       (title, folder_id, content, visible_to))
             conn.commit()
             return redirect(url_for('index'))
 
-    return render_template('page_edit.html', mode='add', folders=folders, error=error)
+    return render_template('page_edit.html', mode='add', folders=[(f['id'],f['name']) for f in folders], error=error)
 
 @app.route('/edit/<int:page_id>', methods=['GET','POST'])
 def edit_page(page_id):
@@ -204,12 +201,11 @@ def edit_page(page_id):
         return redirect(url_for('index'))
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT title, folder_id, content, visible_to FROM pages WHERE id=?", (page_id,))
+    c.execute("SELECT title, folder_id, content, visible_to FROM pages WHERE id=%s", (page_id,))
     page = c.fetchone()
     if not page:
         return "Stránka neexistuje", 404
 
-    # na nacitanie folderov
     c.execute("SELECT id, name FROM folders ORDER BY name")
     folders = c.fetchall()
 
@@ -221,34 +217,16 @@ def edit_page(page_id):
         content = request.form.get('content')
         visible_to = request.form.get('visible_to')
 
-        # skontrolujeme ci sa nezrazia nazvy stránok
-        c.execute("SELECT COUNT(*) FROM pages WHERE title=? AND id!=?", (title, page_id))
+        c.execute("SELECT COUNT(*) FROM pages WHERE title=%s AND id!=%s", (title, page_id))
         count = c.fetchone()[0]
         if count > 0:
             error = "Stránka s týmto názvom už existuje!"
         else:
-            c.execute("UPDATE pages SET title=?, folder_id=?, content=?, visible_to=?, updated_at=datetime('now') WHERE id=?",
+            c.execute("UPDATE pages SET title=%s, folder_id=%s, content=%s, visible_to=%s, updated_at=NOW() WHERE id=%s",
                       (title, folder_id, content, visible_to, page_id))
             conn.commit()
             return redirect(url_for('view_page', page_id=page_id))
-    return render_template('page_edit.html', mode='edit', page_id=page_id, page=page, folders=folders, error=error)
-
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def get_unique_filename(filepath):
-    base, ext = os.path.splitext(filepath)
-    counter = 2
-    new_filepath = filepath
-    while os.path.exists(new_filepath):
-        new_filepath = f"{base}_{counter}{ext}"
-        counter += 1
-    return new_filepath
+    return render_template('page_edit.html', mode='edit', page_id=page_id, page=(page['title'], page['folder_id'], page['content'], page['visible_to']), folders=[(f['id'],f['name']) for f in folders], error=error)
 
 @app.route('/upload_image', methods=['POST'])
 def upload_image():
@@ -259,11 +237,31 @@ def upload_image():
     file = request.files['image']
     if file.filename == '':
         return jsonify({"error":"No filename"}), 400
+
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
     if file and allowed_file(file.filename):
+        from werkzeug.utils import secure_filename
+        UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
+        if not os.path.exists(UPLOAD_FOLDER):
+            os.makedirs(UPLOAD_FOLDER)
+
         filename = secure_filename(file.filename)
         filepath = os.path.join(UPLOAD_FOLDER, filename)
+
+        def get_unique_filename(filepath):
+            base, ext = os.path.splitext(filepath)
+            counter = 2
+            new_filepath = filepath
+            while os.path.exists(new_filepath):
+                new_filepath = f"{base}_{counter}{ext}"
+                counter += 1
+            return new_filepath
+
         if os.path.exists(filepath):
-            unique_filename = get_unique_filename(os.path.join(UPLOAD_FOLDER, filename))
+            unique_filename = get_unique_filename(filepath)
             fn = os.path.basename(unique_filename)
             file.save(unique_filename)
             url = url_for('static', filename='uploads/' + fn, _external=False)
@@ -279,7 +277,13 @@ def upload_image():
 def list_images():
     if not is_admin():
         return redirect(url_for('index'))
+    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER)
     images = os.listdir(UPLOAD_FOLDER)
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+    def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
     images = [img for img in images if allowed_file(img)]
     return render_template('images.html', images=images)
 
@@ -290,6 +294,7 @@ def delete_image():
     filename = request.form.get('filename')
     if not filename:
         return jsonify({"error":"No filename"}), 400
+    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
     filepath = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(filepath):
         os.remove(filepath)
@@ -297,7 +302,6 @@ def delete_image():
     else:
         return "Súbor neexistuje", 404
 
-# Pridať priečinok (iba admin)
 @app.route('/add_folder', methods=['GET','POST'])
 def add_folder():
     if not is_admin():
@@ -310,46 +314,43 @@ def add_folder():
         if name == '':
             error = "Názov priečinka nemôže byť prázdny."
         else:
-            # skontrolujeme unique
-            c.execute("SELECT COUNT(*) FROM folders WHERE name=?", (name,))
+            c.execute("SELECT COUNT(*) FROM folders WHERE name=%s", (name,))
             count = c.fetchone()[0]
             if count > 0:
                 error = "Priečinok s týmto názvom už existuje."
             else:
-                c.execute("INSERT INTO folders (name) VALUES (?)", (name,))
+                c.execute("INSERT INTO folders (name) VALUES (%s)", (name,))
                 conn.commit()
                 return redirect(url_for('index'))
     return render_template('folder_edit.html', mode='add', error=error)
 
-# Premenovať priečinok
 @app.route('/rename_folder/<int:folder_id>', methods=['GET','POST'])
 def rename_folder(folder_id):
     if not is_admin():
         return redirect(url_for('index'))
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT name FROM folders WHERE id=?", (folder_id,))
+    c.execute("SELECT name FROM folders WHERE id=%s", (folder_id,))
     folder = c.fetchone()
     if not folder:
         return "Priečinok neexistuje", 404
-    old_name = folder[0]
+    old_name = folder['name']
     error = None
     if request.method == 'POST':
         new_name = request.form.get('name').strip()
         if new_name == '':
             error = "Názov priečinka nemôže byť prázdny."
         else:
-            c.execute("SELECT COUNT(*) FROM folders WHERE name=? AND id!=?", (new_name, folder_id))
+            c.execute("SELECT COUNT(*) FROM folders WHERE name=%s AND id!=%s", (new_name, folder_id))
             count = c.fetchone()[0]
             if count > 0:
                 error = "Priečinok s týmto názvom už existuje."
             else:
-                c.execute("UPDATE folders SET name=? WHERE id=?", (new_name, folder_id))
+                c.execute("UPDATE folders SET name=%s WHERE id=%s", (new_name, folder_id))
                 conn.commit()
                 return redirect(url_for('index'))
     return render_template('folder_edit.html', mode='edit', folder_id=folder_id, old_name=old_name, error=error)
 
-# Zmazať priečinok
 @app.route('/delete_folder', methods=['POST'])
 def delete_folder():
     if not is_admin():
@@ -359,12 +360,10 @@ def delete_folder():
         return "folder_id missing", 400
     conn = get_db()
     c = conn.cursor()
-    # vymazeme priecinok a tym padom aj vsetky stranky v nom (ON DELETE CASCADE)
-    c.execute("DELETE FROM folders WHERE id=?", (folder_id,))
+    c.execute("DELETE FROM folders WHERE id=%s", (folder_id,))
     conn.commit()
     return redirect(url_for('index'))
 
-# Zmazať stránku
 @app.route('/delete_page', methods=['POST'])
 def delete_page():
     if not is_admin():
@@ -374,7 +373,7 @@ def delete_page():
         return "page_id missing", 400
     conn = get_db()
     c = conn.cursor()
-    c.execute("DELETE FROM pages WHERE id=?", (page_id,))
+    c.execute("DELETE FROM pages WHERE id=%s", (page_id,))
     conn.commit()
     return redirect(url_for('index'))
 
