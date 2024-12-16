@@ -4,14 +4,15 @@ from psycopg2.extras import DictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, g, jsonify
 import markdown as md
 from bs4 import BeautifulSoup
+import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 
 app = Flask(__name__)
 app.secret_key = 'verysecretkey'
 
-DATABASE_URL = os.environ.get('DATABASE_URL')  # Nastavíte na Rendere v env variables
-# Napr: DATABASE_URL=postgresql://pages_owner:M8cesI3RKlEY@ep-falling-mountain-a21vv6d2.eu-central-1.aws.neon.tech/pages?sslmode=require
+DATABASE_URL = os.environ.get('DATABASE_URL')
+CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')  # musí byť vo formáte cloudinary://api_key:api_secret@cloud_name
 
 USERS = {
     "example1@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
@@ -34,7 +35,6 @@ def close_connection(exception):
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    # Vytvorenie tabuliek (Postgres)
     c.execute('''
     CREATE TABLE IF NOT EXISTS folders (
         id SERIAL PRIMARY KEY,
@@ -53,7 +53,6 @@ def init_db():
         FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
     );
     ''')
-    # Skontrolujeme aspon jeden folder
     c.execute("SELECT COUNT(*) FROM folders")
     count = c.fetchone()[0]
     if count == 0:
@@ -78,6 +77,7 @@ def process_images(html):
         base_alt = parts[0] if parts else ''
         scale = None
         caption = None
+        align = 'center'  # default
         for p in parts[1:]:
             if p.startswith('scale='):
                 try:
@@ -89,16 +89,33 @@ def process_images(html):
                     pass
             elif p.startswith('caption='):
                 caption = p.replace('caption=', '').strip()
+            elif p.startswith('align='):
+                align = p.replace('align=', '').strip()
 
         img['alt'] = base_alt
         style = img.get('style', '')
-        style += ' display:block; margin-left:auto; margin-right:auto; height:auto;'
-        if scale:
-            style += f' max-width:{scale}%;'
-        else:
-            style += ' max-width:100%;'
-        img['style'] = style.strip()
+        # common styles
+        style += ' height:auto;'
+        if align == 'center':
+            # Center as before
+            style += ' display:block; margin-left:auto; margin-right:auto;'
+            if scale:
+                style += f' max-width:{scale}%;'
+            else:
+                style += ' max-width:100%;'
+        elif align == 'left':
+            # float left
+            style += ' float:left; margin:0 10px 10px 0;'
+            if scale:
+                style += f' max-width:{scale}%;'
+            # no else needed, no scaling = original size
+        elif align == 'right':
+            # float right
+            style += ' float:right; margin:0 0 10px 10px;'
+            if scale:
+                style += f' max-width:{scale}%;'
 
+        img['style'] = style.strip()
         img['data-fullsrc'] = img.get('src', '')
 
         if caption:
@@ -240,7 +257,6 @@ def upload_image():
     if file.filename == '':
         return jsonify({"error":"No filename"}), 400
 
-    # Voliteľné: skontrolujeme príponu
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
     def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -248,41 +264,39 @@ def upload_image():
     if not allowed_file(file.filename):
         return jsonify({"error":"File not allowed"}), 400
 
-    result = cloudinary.uploader.upload(file, folder="lohotskydracak")
-
-    if 'secure_url' in result:
-        return jsonify({"url": result['secure_url']})
-    else:
+    try:
+        result = cloudinary.uploader.upload(file, folder="lohotskydracak")
+        if 'secure_url' in result:
+            return jsonify({"url": result['secure_url']})
+        else:
+            return jsonify({"error":"Upload failed"}), 500
+    except Exception as e:
+        print("Cloudinary upload error:", e)
         return jsonify({"error":"Upload failed"}), 500
 
 @app.route('/images')
 def list_images():
     if not is_admin():
         return redirect(url_for('index'))
-
-    # Načítame zoznam obrázkov z Cloudinary
-    # Predpokladáme, že všetky uploady idú do folderu "lohotskydracak"
-    # Môžete to zmeniť podľa potreby, ak ste v upload_image nastavili iný folder.
+    # Pokúsime sa načítať obrázky z Cloudinary
     try:
         resources = cloudinary.api.resources(
             type='upload',
-            prefix='lohotskydracak/',  # prefix určuje, že chceme obrázky z tohto priečinka
+            prefix='lohotskydracak/',
             max_results=100
         )
     except Exception as e:
-        print("Chyba pri načítaní obrázkov:", e)
+        print("Chyba pri načítaní obrázkov z Cloudinary:", e)
         resources = {'resources': []}
 
     images = []
     for r in resources.get('resources', []):
-        # r obsahuje 'public_id', 'secure_url', atď.
         images.append({
             'public_id': r['public_id'],
             'url': r['secure_url']
         })
 
     return render_template('images.html', images=images)
-
 
 @app.route('/delete_image', methods=['POST'])
 def delete_image():
@@ -292,10 +306,7 @@ def delete_image():
     if not public_id:
         return jsonify({"error":"No filename(public_id)"}), 400
 
-    # Vymažeme obrázok z Cloudinary
     result = cloudinary.uploader.destroy(public_id)
-    # result napr. {'result': 'ok'} ak sa podarilo
-
     if result.get('result') == 'ok':
         return redirect(url_for('list_images'))
     else:

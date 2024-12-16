@@ -38,6 +38,7 @@
     
     <div class="mb-3">
         <label class="form-label">Obsah (Markdown):</label>
+        <!-- Toolbar -->
         <div class="btn-group mb-2" role="group">
             <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="1"><i class="fas fa-heading"></i> H1</button>
             <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="2">H2</button>
@@ -65,6 +66,7 @@
     <button type="submit" class="btn btn-primary">Uložiť</button>
 </form>
 
+<!-- Modal pre obrázok -->
 <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -86,6 +88,14 @@
             <label>Scale (veľkosť v %):</label>
             <input type="range" class="form-range" id="image-scale" min="10" max="100" value="100">
             <span id="image-scale-value">100%</span>
+        </div>
+        <div class="mb-3">
+            <label>Align (zarovnanie):</label>
+            <select id="image-align" class="form-select">
+                <option value="center" selected>Center</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+            </select>
         </div>
         <div class="mb-3">
             <label>Caption (popis, nepovinné):</label>

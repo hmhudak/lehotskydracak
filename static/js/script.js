@@ -22,7 +22,6 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
-    // Toolbar actions (ak existuje textarea)
     if (textarea) {
         document.querySelectorAll('[data-action]').forEach(btn => {
             btn.addEventListener('click', function() {
@@ -37,6 +36,7 @@ document.addEventListener("DOMContentLoaded", function() {
                     const selected = text.substring(start, end);
                     const newText = text.substring(0, start) + before + selected + after + text.substring(end);
                     textarea.value = newText;
+                    // po wrapText necháme fokus a selection na vložený text
                     textarea.focus();
                     textarea.selectionStart = start + before.length;
                     textarea.selectionEnd = textarea.selectionStart + selected.length;
@@ -56,8 +56,24 @@ document.addEventListener("DOMContentLoaded", function() {
                     textarea.value = newText;
                     restoreFocusAndSelection(insert, start);
                 } else if (action === 'link') {
-                    // Správny formát linku: [text](url)
-                    wrapText('[','](http://)');
+                    // link: vložíme [selected](http://)
+                    // potom kurzor umiestnime do http://
+                    const selected = text.substring(start, end);
+                    const before = '[';
+                    const after = '](http://)';
+                    const newText = text.substring(0, start) + before + selected + after + text.substring(end);
+                    textarea.value = newText;
+                    textarea.focus();
+                    // Teraz vyberieme http:// v linku.
+                    // Pozícia http:// začína za selected textom: 
+                    // [selected](http://)
+                    // Po vložení:
+                    // start+before.length+selected.length+2 sú znaky pre '](, začiatok http
+                    let sLen = selected.length;
+                    let cursorPos = start + before.length + sLen + 3; // '(' je o 2 znaky po selected, http začína o 3
+                    textarea.selectionStart = cursorPos;
+                    textarea.selectionEnd = cursorPos + 4; // vyberieme "http"
+                    updatePreview();
                 } else if (action === 'image') {
                     let imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
                     imageModal.show();
@@ -78,10 +94,10 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
-    // Obrázok modal pri editácii
     const insertBtn = document.getElementById('insert-image-btn');
     const scaleRange = document.getElementById('image-scale');
     const scaleValue = document.getElementById('image-scale-value');
+    const alignSelect = document.getElementById('image-align');
 
     if (scaleRange) {
         scaleRange.addEventListener('input', function() {
@@ -95,10 +111,12 @@ document.addEventListener("DOMContentLoaded", function() {
             const fileInput = document.getElementById('image-file');
             const captionInput = document.getElementById('image-caption');
             const scaleInput = document.getElementById('image-scale');
+            const alignInput = document.getElementById('image-align');
             const altText = "Obrázok"; 
             const url = urlInput.value.trim();
             const caption = captionInput.value.trim();
             const scale = parseInt(scaleInput.value,10);
+            const align = alignInput.value; // 'left','right','center'
 
             if (!textarea) return;
 
@@ -113,6 +131,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 }
                 if (caption !== '') {
                     altWithAttrs += ` | caption=${caption}`;
+                }
+                if (align && align !== 'center') {
+                    altWithAttrs += ` | align=${align}`;
+                } else {
+                    // align center je default
+                    altWithAttrs += ` | align=center`;
                 }
 
                 const toInsert = `![${altWithAttrs}](${mdUrl})`;
@@ -143,6 +167,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         fileInput.value = '';
                         scaleInput.value = '100';
                         scaleValue.textContent = '100%';
+                        alignInput.value = 'center';
                     } else {
                         alert("Chyba pri nahrávaní obrázka: " + (data.error || 'Neznáma chyba'));
                     }
@@ -160,11 +185,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 fileInput.value = '';
                 scaleInput.value = '100';
                 scaleValue.textContent = '100%';
+                alignInput.value = 'center';
             }
         });
     }
 
-    // Kliknutie na obrázok v page_view zobrazí full-size v modále
     const pageContent = document.querySelector('.page-content');
     const imageFullModal = document.getElementById('imageFullModal');
     const imageFullView = document.getElementById('image-full-view');
@@ -178,43 +203,6 @@ document.addEventListener("DOMContentLoaded", function() {
                     modal.show();
                 }
             }
-        });
-    }
-
-    // Pre images.html - kliknutie na názov obrázka -> fullsize modal
-    const imageLinks = document.querySelectorAll('.image-link');
-    const imageFullModal2 = document.getElementById('imageFullModal2');
-    const imageFullView2 = document.getElementById('image-full-view2');
-    if (imageLinks && imageFullModal2 && imageFullView2) {
-        imageLinks.forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                const imgUrl = this.getAttribute('data-img');
-                if (imgUrl) {
-                    imageFullView2.setAttribute('src', imgUrl);
-                    let modal2 = new bootstrap.Modal(imageFullModal2);
-                    modal2.show();
-                }
-            });
-        });
-    }
-
-    // Pre index.html - mazanie priečinka
-    const deleteFolderBtns = document.querySelectorAll('.delete-folder-btn');
-    const deleteFolderModal = document.getElementById('deleteFolderModal');
-    const deleteFolderNameSpan = document.getElementById('delete-folder-name');
-    const deleteFolderIdInput = document.getElementById('delete-folder-id-input');
-
-    if (deleteFolderBtns && deleteFolderModal && deleteFolderNameSpan && deleteFolderIdInput) {
-        deleteFolderBtns.forEach(btn => {
-            btn.addEventListener('click', function() {
-                const folderId = this.getAttribute('data-folder_id');
-                const folderName = this.getAttribute('data-folder_name');
-                deleteFolderNameSpan.textContent = folderName;
-                deleteFolderIdInput.value = folderId;
-                let modal = new bootstrap.Modal(deleteFolderModal);
-                modal.show();
-            });
         });
     }
 
