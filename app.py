@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, g
 import markdown as md
 from bs4 import BeautifulSoup
 import cloudinary.uploader
+import cloudinary.api
 
 app = Flask(__name__)
 app.secret_key = 'verysecretkey'
@@ -258,30 +259,47 @@ def upload_image():
 def list_images():
     if not is_admin():
         return redirect(url_for('index'))
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-    images = os.listdir(UPLOAD_FOLDER)
-    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-    def allowed_file(filename):
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-    images = [img for img in images if allowed_file(img)]
+
+    # Načítame zoznam obrázkov z Cloudinary
+    # Predpokladáme, že všetky uploady idú do folderu "lohotskydracak"
+    # Môžete to zmeniť podľa potreby, ak ste v upload_image nastavili iný folder.
+    try:
+        resources = cloudinary.api.resources(
+            type='upload',
+            prefix='lohotskydracak/',  # prefix určuje, že chceme obrázky z tohto priečinka
+            max_results=100
+        )
+    except Exception as e:
+        print("Chyba pri načítaní obrázkov:", e)
+        resources = {'resources': []}
+
+    images = []
+    for r in resources.get('resources', []):
+        # r obsahuje 'public_id', 'secure_url', atď.
+        images.append({
+            'public_id': r['public_id'],
+            'url': r['secure_url']
+        })
+
     return render_template('images.html', images=images)
+
 
 @app.route('/delete_image', methods=['POST'])
 def delete_image():
     if not is_admin():
         return jsonify({"error": "Not allowed"}), 403
-    filename = request.form.get('filename')
-    if not filename:
-        return jsonify({"error":"No filename"}), 400
-    UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    public_id = request.form.get('filename')
+    if not public_id:
+        return jsonify({"error":"No filename(public_id)"}), 400
+
+    # Vymažeme obrázok z Cloudinary
+    result = cloudinary.uploader.destroy(public_id)
+    # result napr. {'result': 'ok'} ak sa podarilo
+
+    if result.get('result') == 'ok':
         return redirect(url_for('list_images'))
     else:
-        return "Súbor neexistuje", 404
+        return "Chyba pri mazaní obrázka", 500
 
 @app.route('/add_folder', methods=['GET','POST'])
 def add_folder():
