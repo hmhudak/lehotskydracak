@@ -4,3 +4,4 @@ markdown==3.4.4
 beautifulsoup4==4.12.2
 psycopg2-binary==2.9.6
 gunicorn==20.1.0
+cloudinary==1.29.0

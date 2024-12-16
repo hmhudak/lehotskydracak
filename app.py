@@ -4,6 +4,7 @@ from psycopg2.extras import DictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, g, jsonify
 import markdown as md
 from bs4 import BeautifulSoup
+import cloudinary.uploader
 
 app = Flask(__name__)
 app.secret_key = 'verysecretkey'
@@ -238,40 +239,23 @@ def upload_image():
     if file.filename == '':
         return jsonify({"error":"No filename"}), 400
 
+    # Voliteľné: skontrolujeme príponu
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
     def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    if file and allowed_file(file.filename):
-        from werkzeug.utils import secure_filename
-        UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-        if not os.path.exists(UPLOAD_FOLDER):
-            os.makedirs(UPLOAD_FOLDER)
-
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(UPLOAD_FOLDER, filename)
-
-        def get_unique_filename(filepath):
-            base, ext = os.path.splitext(filepath)
-            counter = 2
-            new_filepath = filepath
-            while os.path.exists(new_filepath):
-                new_filepath = f"{base}_{counter}{ext}"
-                counter += 1
-            return new_filepath
-
-        if os.path.exists(filepath):
-            unique_filename = get_unique_filename(filepath)
-            fn = os.path.basename(unique_filename)
-            file.save(unique_filename)
-            url = url_for('static', filename='uploads/' + fn, _external=False)
-            return jsonify({"url": url})
-        else:
-            file.save(filepath)
-            url = url_for('static', filename='uploads/' + filename, _external=False)
-            return jsonify({"url": url})
-    else:
+    if not allowed_file(file.filename):
         return jsonify({"error":"File not allowed"}), 400
+
+    # Upload na Cloudinary
+    # cloudinary.uploader.upload podporuje file-like objekty, takže môžeme rovno dať file
+    result = cloudinary.uploader.upload(file, folder="lohotskydracak")
+    # result obsahuje 'secure_url', čo je HTTPS URL na obrázok
+
+    if 'secure_url' in result:
+        return jsonify({"url": result['secure_url']})
+    else:
+        return jsonify({"error":"Upload failed"}), 500
 
 @app.route('/images')
 def list_images():
