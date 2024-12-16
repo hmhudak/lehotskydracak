@@ -31,7 +31,7 @@ body {
 
 /* Kompromisná tmavohnedá pre folder header */
 .folder-header {
-    background: #5e4942; /* kompromisná hnedá */
+    background: #553a31; /* kompromisná hnedá */
     color: #fff;
     border-bottom: 2px solid #777;
 }
@@ -54,5 +54,37 @@ body {
 
 /* Headingy s clear, aby neobtekali obrázky */
 h1, h2, h3, h4 {
+    clear: both;
+}
+
+/* Styling pre figure a figcaption */
+figure {
+    margin: 0;
+    padding: 0;
+}
+
+.figure-center {
+    display: block;
+    text-align: center;
+    margin: 0 auto;
+}
+
+.figure-left, .figure-right {
+    display: inline-block;
+    vertical-align: top;
+}
+
+.figure-caption {
+    text-align: center;
+    font-size: smaller;
+    color: #555;
+    margin-top: 5px;
+    clear: both;
+}
+
+/* Uistite sa, že figure neovplyvňuje ostatný obsah */
+figure::after {
+    content: "";
+    display: table;
     clear: both;
 }

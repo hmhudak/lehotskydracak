@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
+    // Toolbar actions
     if (textarea) {
         document.querySelectorAll('[data-action]').forEach(btn => {
             btn.addEventListener('click', function() {
@@ -94,10 +95,12 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 
+    // Obrázok modal pri editácii
     const insertBtn = document.getElementById('insert-image-btn');
     const scaleRange = document.getElementById('image-scale');
     const scaleValue = document.getElementById('image-scale-value');
     const alignSelect = document.getElementById('image-align');
+    const altInput = document.getElementById('image-alt'); // nový
 
     if (scaleRange) {
         scaleRange.addEventListener('input', function() {
@@ -112,7 +115,9 @@ document.addEventListener("DOMContentLoaded", function() {
             const captionInput = document.getElementById('image-caption');
             const scaleInput = document.getElementById('image-scale');
             const alignInput = document.getElementById('image-align');
-            const altText = "Obrázok"; 
+            const altTextInput = document.getElementById('image-alt'); // nový
+            const altText = altTextInput.value.trim() || "Obrázok"; // nepovinný
+
             const url = urlInput.value.trim();
             const caption = captionInput.value.trim();
             const scale = parseInt(scaleInput.value,10);
@@ -148,7 +153,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 updatePreview();
             }
 
-            let imageModal = bootstrap.Modal.getInstance(document.getElementById('imageModal'));
+            let imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
 
             if (fileInput.files && fileInput.files.length > 0) {
                 const formData = new FormData();
@@ -168,6 +173,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         scaleInput.value = '100';
                         scaleValue.textContent = '100%';
                         alignInput.value = 'center';
+                        altInput.value = ''; // reset alt
                     } else {
                         alert("Chyba pri nahrávaní obrázka: " + (data.error || 'Neznáma chyba'));
                     }
@@ -186,10 +192,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 scaleInput.value = '100';
                 scaleValue.textContent = '100%';
                 alignInput.value = 'center';
+                altInput.value = ''; // reset alt
             }
         });
     }
 
+    // Kliknutie na obrázok v page_view zobrazí full-size v modále
     const pageContent = document.querySelector('.page-content');
     const imageFullModal = document.getElementById('imageFullModal');
     const imageFullView = document.getElementById('image-full-view');

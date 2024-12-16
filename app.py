@@ -14,6 +14,9 @@ app.secret_key = 'verysecretkey'
 DATABASE_URL = os.environ.get('DATABASE_URL')
 CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')  # musí byť vo formáte cloudinary://api_key:api_secret@cloud_name
 
+# Konfigurácia Cloudinary
+cloudinary.config(cloudinary_url=CLOUDINARY_URL)
+
 USERS = {
     "example1@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
     "example2@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
@@ -74,7 +77,7 @@ def process_images(html):
     for img in imgs:
         alt = img.get('alt', '')
         parts = [p.strip() for p in alt.split('|')]
-        base_alt = parts[0] if parts else ''
+        base_alt = parts[0] if parts else 'Obrázok'
         scale = None
         caption = None
         align = 'center'  # default
@@ -90,15 +93,17 @@ def process_images(html):
             elif p.startswith('caption='):
                 caption = p.replace('caption=', '').strip()
             elif p.startswith('align='):
-                align = p.replace('align=', '').strip()
+                align = p.replace('align=', '').strip().lower()
 
         img['alt'] = base_alt
         style = img.get('style', '')
         # common styles
         style += ' height:auto;'
+        figure_class = 'figure-center'
         if align == 'center':
             # Center as before
             style += ' display:block; margin-left:auto; margin-right:auto;'
+            figure_class = 'figure-center'
             if scale:
                 style += f' max-width:{scale}%;'
             else:
@@ -106,12 +111,13 @@ def process_images(html):
         elif align == 'left':
             # float left
             style += ' float:left; margin:0 10px 10px 0;'
+            figure_class = 'figure-left'
             if scale:
                 style += f' max-width:{scale}%;'
-            # no else needed, no scaling = original size
         elif align == 'right':
             # float right
             style += ' float:right; margin:0 0 10px 10px;'
+            figure_class = 'figure-right'
             if scale:
                 style += f' max-width:{scale}%;'
 
@@ -119,13 +125,18 @@ def process_images(html):
         img['data-fullsrc'] = img.get('src', '')
 
         if caption:
-            figure = soup.new_tag('figure', style="text-align:center;")
+            figure = soup.new_tag('figure', attrs={'class': figure_class})
             img.replace_with(figure)
             figure.append(img)
             figcap = soup.new_tag('figcaption')
             figcap.string = caption
-            figcap['style'] = "font-size:smaller;color:#555;margin-top:5px;"
+            figcap['class'] = "figure-caption"
             figure.append(figcap)
+        else:
+            # If no caption, still wrap in figure to handle alignment
+            figure = soup.new_tag('figure', attrs={'class': figure_class})
+            img.replace_with(figure)
+            figure.append(img)
 
     return str(soup)
 
