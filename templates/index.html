@@ -2,14 +2,18 @@
 {% block content %}
 <h2 class="mb-4" style="font-family:'Marcellus', serif;">Zoznam priečinkov a stránok</h2>
 
+{% if session.user.role == "Admin" %}
+<p><a href="{{ url_for('add_folder') }}" class="btn btn-sm btn-outline-dark"><i class="fas fa-folder-plus"></i> Pridať nový priečinok</a></p>
+{% endif %}
+
 {% for f_id, f_name, pages in folders %}
 <div class="card mb-3 folder-card">
     <div class="card-header d-flex justify-content-between align-items-center folder-header" style="font-family:'Marcellus', serif;">
         <span>{{ f_name }}</span>
         {% if session.user.role == "Admin" %}
-        <div class="btn-group" role="group">
-            <a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark" title="Pridať stránku"><i class="fas fa-plus"></i></a>
-            <a href="{{ url_for('rename_folder', folder_id=f_id) }}" class="btn btn-sm btn-outline-primary" title="Premenovať priečinok"><i class="fas fa-edit"></i></a>
+        <div>
+            <a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark me-1" title="Pridať stránku"><i class="fas fa-plus"></i></a>
+            <a href="{{ url_for('rename_folder', folder_id=f_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Premenovať priečinok"><i class="fas fa-edit"></i></a>
             <button class="btn btn-sm btn-outline-danger delete-folder-btn" data-folder_id="{{ f_id }}" data-folder_name="{{ f_name }}" title="Zmazať priečinok">
                 <i class="fas fa-trash"></i>
             </button>

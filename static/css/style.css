@@ -29,9 +29,9 @@ body {
     font-family:'Lato', sans-serif;
 }
 
-/* Hlavička priečinka tmavšia */
+/* Hlavička priečinka trošku svetlejšia ako minule ale tmavšia ako pôvodne */
 .folder-header {
-    background: #4e342e; /* tmavšia hnedá */
+    background: #553a31; /* kompromisná tmavohnedá */
     color: #fff;
     border-bottom: 2px solid #777;
 }
@@ -48,9 +48,6 @@ body {
   padding:0;
 }
 
-/* Ak je potrebné hrubšie bordery aj inde */
 .table, .table td, .table th {
     border: 2px solid #777 !important;
 }
-
-/* Ak sa chcú hrubšie bordery aj inde, podľa potreby pridajte */
