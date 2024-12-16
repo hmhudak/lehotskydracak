@@ -247,10 +247,7 @@ def upload_image():
     if not allowed_file(file.filename):
         return jsonify({"error":"File not allowed"}), 400
 
-    # Upload na Cloudinary
-    # cloudinary.uploader.upload podporuje file-like objekty, takže môžeme rovno dať file
     result = cloudinary.uploader.upload(file, folder="lohotskydracak")
-    # result obsahuje 'secure_url', čo je HTTPS URL na obrázok
 
     if 'secure_url' in result:
         return jsonify({"url": result['secure_url']})
