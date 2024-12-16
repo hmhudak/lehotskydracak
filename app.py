@@ -11,6 +11,10 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 
+#Database: Neon: https://console.neon.tech/app/projects/shiny-paper-11139807/branches/br-silent-wave-a2brjqz8/tables?database=pages
+#Storage: Cloudinary: https://console.cloudinary.com/pm/c-ec2d3f00786a969b115f55e72f6df4/media-explorer/lohotskydracak
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'verysecretkey')  # Zabezpečenie pomocou environment variable
 
@@ -21,7 +25,7 @@ CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')  # musí byť vo formáte clou
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 USERS = {
-    "example1@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
+    "admin@admin.com": {"password": "Adminadmin1", "role": "Admin"},
     "example2@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
     "example3@gmail.com": {"password": "Abcdefghij1", "role": "Player"},
     "example4@gmail.com": {"password": "Abcdefghij1", "role": "Player"},
