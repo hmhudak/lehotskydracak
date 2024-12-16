@@ -20,12 +20,20 @@ body {
     font-family:'Marcellus', serif;
 }
 
+/* Hrubšie okraje kartičiek */
 .card {
     border-radius: 8px;
     overflow: hidden;
-    border: 1px solid #ccc;
+    border: 2px solid #777; /* hrubší border */
     background: #f9f5e3;
     font-family:'Lato', sans-serif;
+}
+
+/* Hlavička priečinka tmavšia */
+.folder-header {
+    background: #4e342e; /* tmavšia hnedá */
+    color: #fff;
+    border-bottom: 2px solid #777;
 }
 
 .preview-box a, .page-content a {
@@ -33,10 +41,16 @@ body {
     text-decoration: underline;
 }
 
-/* Modal fullscreen pre obrázok */
 .modal-fullscreen {
   width: 100vw;
   height: 100vh;
   margin:0;
   padding:0;
 }
+
+/* Ak je potrebné hrubšie bordery aj inde */
+.table, .table td, .table th {
+    border: 2px solid #777 !important;
+}
+
+/* Ak sa chcú hrubšie bordery aj inde, podľa potreby pridajte */

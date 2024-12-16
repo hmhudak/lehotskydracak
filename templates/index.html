@@ -2,25 +2,21 @@
 {% block content %}
 <h2 class="mb-4" style="font-family:'Marcellus', serif;">Zoznam priečinkov a stránok</h2>
 
-{% if session.user.role == "Admin" %}
-<p><a href="{{ url_for('add_folder') }}" class="btn btn-sm btn-outline-dark"><i class="fas fa-folder-plus"></i> Pridať nový priečinok</a></p>
-{% endif %}
-
 {% for f_id, f_name, pages in folders %}
-<div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center" style="font-family:'Marcellus', serif;">
+<div class="card mb-3 folder-card">
+    <div class="card-header d-flex justify-content-between align-items-center folder-header" style="font-family:'Marcellus', serif;">
         <span>{{ f_name }}</span>
         {% if session.user.role == "Admin" %}
-        <div>
-            <a href="{{ url_for('rename_folder', folder_id=f_id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i> Premenovať</a>
-            <button class="btn btn-sm btn-outline-danger delete-folder-btn" data-folder_id="{{ f_id }}" data-folder_name="{{ f_name }}"><i class="fas fa-trash"></i> Zmazať</button>
+        <div class="btn-group" role="group">
+            <a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark" title="Pridať stránku"><i class="fas fa-plus"></i></a>
+            <a href="{{ url_for('rename_folder', folder_id=f_id) }}" class="btn btn-sm btn-outline-primary" title="Premenovať priečinok"><i class="fas fa-edit"></i></a>
+            <button class="btn btn-sm btn-outline-danger delete-folder-btn" data-folder_id="{{ f_id }}" data-folder_name="{{ f_name }}" title="Zmazať priečinok">
+                <i class="fas fa-trash"></i>
+            </button>
         </div>
         {% endif %}
     </div>
     <div class="card-body" style="font-family:'Lato', sans-serif;">
-        {% if session.user.role == "Admin" %}
-        <p><a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark"><i class="fas fa-plus"></i> Pridať novú stránku do tohto priečinka</a></p>
-        {% endif %}
         {% if pages|length == 0 %}
         <p>Žiadne stránky.</p>
         {% else %}
@@ -28,12 +24,6 @@
             {% for p_title, p_id in pages %}
             <li>
                 <a href="{{ url_for('view_page', page_id=p_id) }}">{{ p_title }}</a>
-                {% if session.user.role == "Admin" %}
-                <form method="post" action="{{ url_for('delete_page') }}" style="display:inline;">
-                    <input type="hidden" name="page_id" value="{{ p_id }}">
-                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Naozaj zmazať stránku {{ p_title }}?')"><i class="fas fa-trash"></i></button>
-                </form>
-                {% endif %}
             </li>
             {% endfor %}
         </ul>
