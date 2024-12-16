@@ -7,6 +7,10 @@ from bs4 import BeautifulSoup
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'verysecretkey'

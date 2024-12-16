@@ -31,9 +31,10 @@ body {
 
 /* Kompromisná tmavohnedá pre folder header */
 .folder-header {
-    background: #7b6760; /* kompromisná hnedá */
-    color: #fff;
+    background: #b09f98; /* kompromisná hnedá */
+    color: #000000;
     border-bottom: 2px solid #777;
+    font-weight: bold;
 }
 
 .preview-box a, .page-content a {
