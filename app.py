@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import psycopg2
 from psycopg2.extras import DictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, g, jsonify
@@ -7,13 +10,9 @@ from bs4 import BeautifulSoup
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'verysecretkey'
+app.secret_key = os.environ.get('SECRET_KEY', 'verysecretkey')  # Zabezpečenie pomocou environment variable
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')  # musí byť vo formáte cloudinary://api_key:api_secret@cloud_name
@@ -383,11 +382,16 @@ def delete_folder():
     folder_id = request.form.get('folder_id')
     if not folder_id:
         return "folder_id missing", 400
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM folders WHERE id=%s", (folder_id,))
-    conn.commit()
-    return redirect(url_for('index'))
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        # Najprv odstránime priečinok, čo automaticky odstráni aj všetky stránky v ňom vďaka FOREIGN KEY s ON DELETE CASCADE
+        c.execute("DELETE FROM folders WHERE id=%s", (folder_id,))
+        conn.commit()
+        return redirect(url_for('index'))
+    except Exception as e:
+        print("Error deleting folder:", e)
+        return "Internal Server Error", 500
 
 @app.route('/delete_page', methods=['POST'])
 def delete_page():
@@ -396,11 +400,15 @@ def delete_page():
     page_id = request.form.get('page_id')
     if not page_id:
         return "page_id missing", 400
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM pages WHERE id=%s", (page_id,))
-    conn.commit()
-    return redirect(url_for('index'))
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("DELETE FROM pages WHERE id=%s", (page_id,))
+        conn.commit()
+        return redirect(url_for('index'))
+    except Exception as e:
+        print("Error deleting page:", e)
+        return "Internal Server Error", 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

@@ -76,7 +76,8 @@ document.addEventListener("DOMContentLoaded", function() {
                     textarea.selectionEnd = cursorPos + 4; // vyberieme "http"
                     updatePreview();
                 } else if (action === 'image') {
-                    let imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
+                    let imageModalElement = document.getElementById('imageModal');
+                    let imageModal = new bootstrap.Modal(imageModalElement);
                     imageModal.show();
                 } else if (action === 'ul') {
                     const selected = text.substring(start, end);
@@ -153,7 +154,11 @@ document.addEventListener("DOMContentLoaded", function() {
                 updatePreview();
             }
 
-            let imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
+            let imageModalElement = document.getElementById('imageModal');
+            let imageModal = bootstrap.Modal.getInstance(imageModalElement);
+            if (!imageModal) {
+                imageModal = new bootstrap.Modal(imageModalElement);
+            }
 
             if (fileInput.files && fileInput.files.length > 0) {
                 const formData = new FormData();
@@ -211,6 +216,23 @@ document.addEventListener("DOMContentLoaded", function() {
                     modal.show();
                 }
             }
+        });
+    }
+
+    // Skript pre nastavenie modálu na zmazanie priečinka
+    var deleteFolderModal = document.getElementById('deleteFolderModal');
+    if (deleteFolderModal) {
+        deleteFolderModal.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget; // Button that triggered the modal
+            var folderId = button.getAttribute('data-folder_id'); // Extract info from data-* attributes
+            var folderName = button.getAttribute('data-folder_name');
+
+            // Update the modal's content.
+            var modalFolderName = deleteFolderModal.querySelector('#delete-folder-name');
+            var modalFolderIdInput = deleteFolderModal.querySelector('#delete-folder-id-input');
+
+            modalFolderName.textContent = folderName;
+            modalFolderIdInput.value = folderId;
         });
     }
 

@@ -14,7 +14,8 @@
         <div>
             <a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark me-1" title="Pridať stránku"><i class="fas fa-plus"></i></a>
             <a href="{{ url_for('rename_folder', folder_id=f_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Premenovať priečinok"><i class="fas fa-edit"></i></a>
-            <button class="btn btn-sm btn-outline-danger delete-folder-btn" data-folder_id="{{ f_id }}" data-folder_name="{{ f_name }}" title="Zmazať priečinok">
+            <!-- Tlačidlo na zmazanie priečinka -->
+            <button class="btn btn-sm btn-outline-danger delete-folder-btn" data-bs-toggle="modal" data-bs-target="#deleteFolderModal" data-folder_id="{{ f_id }}" data-folder_name="{{ f_name }}" title="Zmazať priečinok">
                 <i class="fas fa-trash"></i>
             </button>
         </div>
@@ -37,7 +38,7 @@
 {% endfor %}
 
 <!-- Modal na zmazanie priečinka -->
-<div class="modal fade" id="deleteFolderModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="deleteFolderModal" tabindex="-1" aria-labelledby="deleteFolderModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <form method="post" action="{{ url_for('delete_folder') }}">
       <div class="modal-content">
@@ -46,7 +47,7 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zatvoriť"></button>
         </div>
         <div class="modal-body">
-          <p>Naozaj chcete zmazať priečinok <span id="delete-folder-name"></span> a všetky jeho stránky?</p>
+          <p>Naozaj chcete zmazať priečinok <strong id="delete-folder-name"></strong> a všetky jeho stránky?</p>
           <input type="hidden" name="folder_id" id="delete-folder-id-input" value="">
         </div>
         <div class="modal-footer">

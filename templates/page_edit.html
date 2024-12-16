@@ -68,50 +68,51 @@
 
 <!-- Modal pre obrázok -->
 <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-image"></i> Vložiť obrázok</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zatvoriť"></button>
-      </div>
-      <div class="modal-body">
-        <p>Vyberte možnosť:</p>
-        <div class="mb-3">
-            <label>URL obrázka (externý):</label>
-            <input type="text" class="form-control" id="image-url">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-image"></i> Vložiť obrázok</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zatvoriť"></button>
         </div>
-        <div class="mb-3">
-            <label>Nahrať súbor z PC:</label>
-            <input type="file" class="form-control" id="image-file" accept="image/*">
+        <div class="modal-body">
+          <p>Vyberte možnosť:</p>
+          <div class="mb-3">
+              <label>URL obrázka (externý):</label>
+              <input type="text" class="form-control" id="image-url">
+          </div>
+          <div class="mb-3">
+              <label>Nahrať súbor z PC:</label>
+              <input type="file" class="form-control" id="image-file" accept="image/*">
+          </div>
+          <div class="mb-3">
+              <label>Scale (veľkosť v %):</label>
+              <input type="range" class="form-range" id="image-scale" min="10" max="100" value="100">
+              <span id="image-scale-value">100%</span>
+          </div>
+          <div class="mb-3">
+              <label>Align (zarovnanie):</label>
+              <select id="image-align" class="form-select">
+                  <option value="center" selected>Center</option>
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+              </select>
+          </div>
+          <div class="mb-3">
+              <label>Caption (popis, nepovinné):</label>
+              <input type="text" class="form-control" id="image-caption">
+          </div>
+          <div class="mb-3">
+              <label>Alternative text (alt, nepovinné):</label>
+              <input type="text" class="form-control" id="image-alt">
+          </div>
+          <small>Ak je nahratý súbor, použije sa ten. Inak sa použije URL.</small>
         </div>
-        <div class="mb-3">
-            <label>Scale (veľkosť v %):</label>
-            <input type="range" class="form-range" id="image-scale" min="10" max="100" value="100">
-            <span id="image-scale-value">100%</span>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
+          <button type="button" class="btn btn-primary" id="insert-image-btn">Vložiť</button>
         </div>
-        <div class="mb-3">
-            <label>Align (zarovnanie):</label>
-            <select id="image-align" class="form-select">
-                <option value="center" selected>Center</option>
-                <option value="left">Left</option>
-                <option value="right">Right</option>
-            </select>
-        </div>
-        <div class="mb-3">
-            <label>Caption (popis, nepovinné):</label>
-            <input type="text" class="form-control" id="image-caption">
-        </div>
-        <div class="mb-3">
-            <label>Alternative text (alt, nepovinné):</label>
-            <input type="text" class="form-control" id="image-alt">
-        </div>
-        <small>Ak je nahratý súbor, použije sa ten. Inak sa použije URL.</small>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
-        <button type="button" class="btn btn-primary" id="insert-image-btn">Vložiť</button>
       </div>
     </div>
-  </div>
+  </div>  
 </div>
 {% endblock %}
