@@ -10,18 +10,14 @@ from bs4 import BeautifulSoup
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-
-#Database: Neon: https://console.neon.tech/app/projects/shiny-paper-11139807/branches/br-silent-wave-a2brjqz8/tables?database=pages
-#Storage: Cloudinary: https://console.cloudinary.com/pm/c-ec2d3f00786a969b115f55e72f6df4/media-explorer/lohotskydracak
-
+import unicodedata
+import re
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'verysecretkey')  # Zabezpečenie pomocou environment variable
+app.secret_key = os.environ.get('SECRET_KEY', 'verysecretkey')
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
-CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')  # musí byť vo formáte cloudinary://api_key:api_secret@cloud_name
-
-# Konfigurácia Cloudinary
+CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
 
 USERS = {
@@ -45,28 +41,35 @@ def close_connection(exception):
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS folders (
-        id SERIAL PRIMARY KEY,
-        name TEXT UNIQUE NOT NULL
-    );
-    ''')
-    c.execute('''
-    CREATE TABLE IF NOT EXISTS pages (
-        id SERIAL PRIMARY KEY,
-        title TEXT UNIQUE NOT NULL,
-        folder_id INTEGER NOT NULL,
-        content TEXT,
-        visible_to TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
-    );
-    ''')
-    c.execute("SELECT COUNT(*) FROM folders")
-    count = c.fetchone()[0]
-    if count == 0:
-        c.execute("INSERT INTO folders (name) VALUES ('General')")
+    # Pridaj stĺpec slug, ak neexistuje
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pages (
+            id SERIAL PRIMARY KEY,
+            title TEXT UNIQUE NOT NULL,
+            content TEXT,
+            visible_to TEXT NOT NULL DEFAULT 'All',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            slug TEXT
+        );
+    """)
+    # CREATE UNIQUE INDEX, ak chceš jedinečný slug:
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS tags (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            color TEXT NOT NULL
+        );
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS page_tags (
+            page_id INTEGER NOT NULL,
+            tag_id INTEGER NOT NULL,
+            PRIMARY KEY(page_id, tag_id),
+            FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        );
+    """)
     conn.commit()
 
 with app.app_context():
@@ -78,6 +81,44 @@ def is_logged_in():
 def is_admin():
     return is_logged_in() and session['user']['role'] == 'Admin'
 
+def remove_diacritics(text):
+    # Odstránime diakritiku
+    nfkd_form = unicodedata.normalize('NFKD', text)
+    only_ascii = nfkd_form.encode('ASCII', 'ignore').decode('ASCII')
+    return only_ascii
+
+def generate_slug(title, c, existing_id=None):
+    """
+    Vygeneruje slug z title tak, že odstráni diakritiku, 
+    nealfanumerické nahradí za ' ', potom nahradí medzery +, 
+    a ošetrí duplicity (ak je slug už v DB).
+    Param c je db cursor. existing_id je ID stránky, pre ktorú to generujeme pri editácii.
+    """
+    base = remove_diacritics(title)
+    # nahradíme všetko okrem alnum a space za ' '
+    base = re.sub(r'[^a-zA-Z0-9\s]+', '', base)
+    # stlačíme viac space
+    base = re.sub(r'\s+', ' ', base).strip()
+    # medzery => '+'
+    base = base.replace(' ', '+')
+    slug = base.lower() if base else 'stranka'
+
+    # overíme, či slug existuje
+    # ak slug= moj+fantasticky+title, a existuje, tak pridáme -2, -3 atď.
+    candidate = slug
+    i = 2
+    while True:
+        if existing_id: 
+            c.execute("SELECT id FROM pages WHERE slug=%s AND id<>%s", (candidate, existing_id))
+        else:
+            c.execute("SELECT id FROM pages WHERE slug=%s", (candidate,))
+        row = c.fetchone()
+        if not row:
+            return candidate
+        else:
+            candidate = slug + f"-{i}"
+            i += 1
+
 def process_images(html):
     soup = BeautifulSoup(html, 'html.parser')
     imgs = soup.find_all('img')
@@ -85,9 +126,9 @@ def process_images(html):
         alt = img.get('alt', '')
         parts = [p.strip() for p in alt.split('|')]
         base_alt = parts[0] if parts else 'Obrázok'
-        scale = None
-        caption = None
-        align = 'center'  # default
+        scale = 100
+        caption = '-'
+        align = 'center'
         for p in parts[1:]:
             if p.startswith('scale='):
                 try:
@@ -103,51 +144,34 @@ def process_images(html):
                 align = p.replace('align=', '').strip().lower()
 
         img['alt'] = base_alt
-        style = img.get('style', '')
-        # common styles
-        style += ' height:auto;'
-        figure_class = 'figure-center'
-        if align == 'center':
-            # Center as before
-            style += ' display:block; margin-left:auto; margin-right:auto;'
-            figure_class = 'figure-center'
-            if scale:
-                style += f' max-width:{scale}%;'
-            else:
-                style += ' max-width:100%;'
-        elif align == 'left':
-            # float left
-            style += ' float:left; margin:0 10px 10px 0;'
-            figure_class = 'figure-left'
-            if scale:
-                style += f' max-width:{scale}%;'
+        if not img.get('data-fullsrc'):
+            img['data-fullsrc'] = img.get('src', '')
+
+        figure = soup.new_tag('figure')
+        figure_style = 'background:#f1f1f1; padding:5px; border:1px solid #ccc; clear:both;'
+        if align == 'left':
+            figure_style += f'float:left; margin:0 10px 10px 0; width:{scale}%;'
         elif align == 'right':
-            # float right
-            style += ' float:right; margin:0 0 10px 10px;'
-            figure_class = 'figure-right'
-            if scale:
-                style += f' max-width:{scale}%;'
+            figure_style += f'float:right; margin:0 0 10px 10px; width:{scale}%;'
+        else:
+            figure_style += f'margin:0 auto; width:{scale}%; display:block;'
+        figure['style'] = figure_style
 
-        img['style'] = style.strip()
-        img['data-fullsrc'] = img.get('src', '')
+        img_style = 'width:100%; display:block; height:auto;'
+        img['style'] = img_style
 
-        if caption:
-            figure = soup.new_tag('figure', attrs={'class': figure_class})
-            img.replace_with(figure)
-            figure.append(img)
+        img.replace_with(figure)
+        figure.append(img)
+
+        if caption and caption != '-':
             figcap = soup.new_tag('figcaption')
             figcap.string = caption
-            figcap['class'] = "figure-caption"
+            figcap['style'] = 'text-align:center; color:#555; font-size:smaller;'
             figure.append(figcap)
-        else:
-            # If no caption, still wrap in figure to handle alignment
-            figure = soup.new_tag('figure', attrs={'class': figure_class})
-            img.replace_with(figure)
-            figure.append(img)
 
     return str(soup)
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['GET','POST'])
 def login():
     if request.method == 'POST':
         email = request.form.get('email')
@@ -169,101 +193,107 @@ def logout():
 def index():
     if not is_logged_in():
         return redirect(url_for('login'))
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name FROM folders ORDER BY name")
-    folder_rows = c.fetchall()
-    folders = []
-    for f in folder_rows:
-        f_id = f['id']
-        f_name = f['name']
-        if is_admin():
-            c.execute("SELECT title, id FROM pages WHERE folder_id=%s ORDER BY title", (f_id,))
-        else:
-            c.execute("SELECT title, id FROM pages WHERE folder_id=%s AND visible_to='All' ORDER BY title", (f_id,))
-        pages = c.fetchall()
-        pages_list = [(p['title'], p['id']) for p in pages]
-        folders.append((f_id, f_name, pages_list))
-    return render_template('index.html', folders=folders)
+    return render_template('index.html')
 
-@app.route('/page/<int:page_id>')
-def view_page(page_id):
+@app.route('/api/pages')
+def api_pages():
     if not is_logged_in():
-        return redirect(url_for('login'))
+        return jsonify([])
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT title, folder_id, content, visible_to FROM pages WHERE id=%s", (page_id,))
-    page = c.fetchone()
-    if not page:
-        return "Stránka neexistuje", 404
-    title, folder_id, content, visible_to = page['title'], page['folder_id'], page['content'], page['visible_to']
-    if visible_to == 'Admin' and not is_admin():
-        return "Nemáte oprávnenie zobraziť túto stránku.", 403
-    
-    html_content = md.markdown(content, extensions=['extra'])
-    html_content = process_images(html_content)
+    if is_admin():
+        c.execute("""
+            SELECT p.id, p.title, p.slug, p.visible_to,
+                   COALESCE(json_agg(json_build_object('tag_id', t.id, 'name', t.name, 'color', t.color)
+                                     ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '[]') AS tags
+            FROM pages p
+            LEFT JOIN page_tags pt ON p.id = pt.page_id
+            LEFT JOIN tags t ON pt.tag_id = t.id AND t.name <> 'stránka'
+            GROUP BY p.id
+            ORDER BY p.title;
+        """)
+    else:
+        c.execute("""
+            SELECT p.id, p.title, p.slug, p.visible_to,
+                   COALESCE(json_agg(json_build_object('tag_id', t.id, 'name', t.name, 'color', t.color)
+                                     ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '[]') AS tags
+            FROM pages p
+            LEFT JOIN page_tags pt ON p.id = pt.page_id
+            LEFT JOIN tags t ON pt.tag_id = t.id AND t.name <> 'stránka'
+            WHERE p.visible_to='All'
+            GROUP BY p.id
+            ORDER BY p.title;
+        """)
+    rows = c.fetchall()
+    result = []
+    for row in rows:
+        result.append({
+            'page_id': row['id'],
+            'title': row['title'],
+            'slug': row['slug'],
+            'visible_to': row['visible_to'],
+            'tags': row['tags']
+        })
+    return jsonify(result)
 
-    return render_template('page_view.html', title=title, content=html_content, page_id=page_id)
+@app.route('/api/tags')
+def api_tags():
+    if not is_logged_in():
+        return jsonify([])
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
+    rows = c.fetchall()
+    result = []
+    for r in rows:
+        result.append({
+            'tag_id': r['id'],
+            'name': r['name'],
+            'color': r['color']
+        })
+    return jsonify(result)
 
-@app.route('/add', methods=['GET','POST'])
-def add_page():
+@app.route('/create_tag', methods=['POST'])
+def create_tag():
     if not is_admin():
-        return redirect(url_for('index'))
+        return jsonify({"error":"Not allowed"}), 403
+    tag_name = request.form.get('name', '').strip()
+    tag_color = request.form.get('color', '').strip()
+    if not tag_name or not tag_color:
+        return jsonify({"error":"Chýba meno alebo farba štítku."}), 400
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT id, name FROM folders ORDER BY name")
-    folders = c.fetchall()
-    error = None
-    if request.method == 'POST':
-        title = request.form.get('title')
-        folder_id = request.form.get('folder_id')
-        content = request.form.get('content')
-        visible_to = request.form.get('visible_to')
+    try:
+        c.execute("INSERT INTO tags (name, color) VALUES (%s, %s) RETURNING id;", (tag_name, tag_color))
+        new_id = c.fetchone()[0]
+        conn.commit()
+        return jsonify({"tag_id": new_id, "name": tag_name, "color": tag_color})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
 
-        c.execute("SELECT COUNT(*) FROM pages WHERE title=%s", (title,))
-        count = c.fetchone()[0]
-        if count > 0:
-            error = "Stránka s týmto názvom už existuje!"
-        else:
-            c.execute("INSERT INTO pages (title, folder_id, content, visible_to, created_at, updated_at) VALUES (%s,%s,%s,%s, NOW(), NOW())",
-                      (title, folder_id, content, visible_to))
-            conn.commit()
-            return redirect(url_for('index'))
-
-    return render_template('page_edit.html', mode='add', folders=[(f['id'],f['name']) for f in folders], error=error)
-
-@app.route('/edit/<int:page_id>', methods=['GET','POST'])
-def edit_page(page_id):
+@app.route('/delete_tags', methods=['POST'])
+def delete_tags():
+    """
+    Vymaže viacero štítkov podľa checkboxov. Očakáva form data: tag_ids[], 
+    v tých ID-čkach. Napríklad: tag_ids=12&tag_ids=13
+    """
     if not is_admin():
-        return redirect(url_for('index'))
+        return jsonify({"error": "Not allowed"}), 403
+    tag_ids = request.form.getlist('tag_ids[]')
+    if not tag_ids:
+        return jsonify({"error":"No tag_ids provided"}), 400
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT title, folder_id, content, visible_to FROM pages WHERE id=%s", (page_id,))
-    page = c.fetchone()
-    if not page:
-        return "Stránka neexistuje", 404
-
-    c.execute("SELECT id, name FROM folders ORDER BY name")
-    folders = c.fetchall()
-
-    error = None
-
-    if request.method == 'POST':
-        title = request.form.get('title')
-        folder_id = request.form.get('folder_id')
-        content = request.form.get('content')
-        visible_to = request.form.get('visible_to')
-
-        c.execute("SELECT COUNT(*) FROM pages WHERE title=%s AND id!=%s", (title, page_id))
-        count = c.fetchone()[0]
-        if count > 0:
-            error = "Stránka s týmto názvom už existuje!"
-        else:
-            c.execute("UPDATE pages SET title=%s, folder_id=%s, content=%s, visible_to=%s, updated_at=NOW() WHERE id=%s",
-                      (title, folder_id, content, visible_to, page_id))
-            conn.commit()
-            return redirect(url_for('view_page', page_id=page_id))
-    return render_template('page_edit.html', mode='edit', page_id=page_id, page=(page['title'], page['folder_id'], page['content'], page['visible_to']), folders=[(f['id'],f['name']) for f in folders], error=error)
+    try:
+        # Pre každé ID => zmaž
+        for tid in tag_ids:
+            c.execute("DELETE FROM tags WHERE id=%s AND name<>'stránka'", (tid,))
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/upload_image', methods=['POST'])
 def upload_image():
@@ -278,43 +308,45 @@ def upload_image():
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
     def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
     if not allowed_file(file.filename):
         return jsonify({"error":"File not allowed"}), 400
 
     try:
-        result = cloudinary.uploader.upload(file, folder="lohotskydracak")
+        result = cloudinary.uploader.upload(file, folder="lehotskydracak")
         if 'secure_url' in result:
             return jsonify({"url": result['secure_url']})
         else:
             return jsonify({"error":"Upload failed"}), 500
     except Exception as e:
-        print("Cloudinary upload error:", e)
-        return jsonify({"error":"Upload failed"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/images')
 def list_images():
     if not is_admin():
         return redirect(url_for('index'))
-    # Pokúsime sa načítať obrázky z Cloudinary
     try:
-        resources = cloudinary.api.resources(
-            type='upload',
-            prefix='lohotskydracak/',
-            max_results=100
-        )
+        resources = cloudinary.api.resources(type='upload', prefix='lehotskydracak/', max_results=100)
     except Exception as e:
-        print("Chyba pri načítaní obrázkov z Cloudinary:", e)
+        print("Cloudinary list error:", e)
         resources = {'resources': []}
-
     images = []
     for r in resources.get('resources', []):
-        images.append({
-            'public_id': r['public_id'],
-            'url': r['secure_url']
-        })
-
+        images.append({'public_id': r['public_id'], 'url': r['secure_url']})
     return render_template('images.html', images=images)
+
+@app.route('/api/list_images')
+def api_list_images():
+    if not is_admin():
+        return jsonify({"images":[]})
+    try:
+        resources = cloudinary.api.resources(type='upload', prefix='lehotskydracak/', max_results=100)
+        images = []
+        for r in resources.get('resources', []):
+            images.append({'public_id': r['public_id'], 'url': r['secure_url']})
+        return jsonify({"images": images})
+    except Exception as e:
+        print("Cloudinary list error:", e)
+        return jsonify({"images":[]})
 
 @app.route('/delete_image', methods=['POST'])
 def delete_image():
@@ -323,79 +355,163 @@ def delete_image():
     public_id = request.form.get('filename')
     if not public_id:
         return jsonify({"error":"No filename(public_id)"}), 400
-
     result = cloudinary.uploader.destroy(public_id)
     if result.get('result') == 'ok':
         return redirect(url_for('list_images'))
     else:
         return "Chyba pri mazaní obrázka", 500
 
-@app.route('/add_folder', methods=['GET','POST'])
-def add_folder():
+@app.route('/add', methods=['GET','POST'])
+def add_page():
     if not is_admin():
         return redirect(url_for('index'))
     conn = get_db()
     c = conn.cursor()
     error = None
     if request.method == 'POST':
-        name = request.form.get('name').strip()
-        if name == '':
-            error = "Názov priečinka nemôže byť prázdny."
+        title = request.form.get('title', '').strip()
+        content = request.form.get('content', '')
+        visible_to = request.form.get('visible_to', 'All')
+        selected_tag_ids = request.form.getlist('tag_ids')
+        selected_tag_ids = [int(x) for x in selected_tag_ids]
+        if not title:
+            error = "Názov stránky nesmie byť prázdny"
         else:
-            c.execute("SELECT COUNT(*) FROM folders WHERE name=%s", (name,))
-            count = c.fetchone()[0]
-            if count > 0:
-                error = "Priečinok s týmto názvom už existuje."
-            else:
-                c.execute("INSERT INTO folders (name) VALUES (%s)", (name,))
-                conn.commit()
-                return redirect(url_for('index'))
-    return render_template('folder_edit.html', mode='add', error=error)
+            # generuj slug
+            slug = generate_slug(title, c)
+            # Vložíme novú stránku
+            try:
+                c.execute("""
+                    INSERT INTO pages (title, content, visible_to, created_at, updated_at, slug)
+                    VALUES (%s, %s, %s, NOW(), NOW(), %s)
+                    RETURNING id
+                """, (title, content, visible_to, slug))
+                new_page_id = c.fetchone()[0]
 
-@app.route('/rename_folder/<int:folder_id>', methods=['GET','POST'])
-def rename_folder(folder_id):
+                c.execute("SELECT id FROM tags WHERE name='stránka'")
+                row_t = c.fetchone()
+                if not row_t:
+                    c.execute("INSERT INTO tags (name, color) VALUES ('stránka', '#cccccc') RETURNING id;")
+                    page_tag_id = c.fetchone()[0]
+                else:
+                    page_tag_id = row_t[0]
+
+                c.execute("INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)", (new_page_id, page_tag_id))
+                for t_id in selected_tag_ids:
+                    c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING""", (new_page_id, t_id))
+                conn.commit()
+                # Presmeruj na /page/<slug>
+                return redirect(url_for('view_page', slug=slug))
+            except Exception as e:
+                conn.rollback()
+                error = f"Chyba pri ukladaní: {str(e)}"
+
+    c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
+    all_tags = c.fetchall()
+    return render_template('page_edit.html', mode='add', page=None, all_tags=all_tags, page_tags=[], editing_page=True, error=error)
+
+@app.route('/edit/<slug>', methods=['GET','POST'])
+def edit_page(slug):
     if not is_admin():
         return redirect(url_for('index'))
+
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT name FROM folders WHERE id=%s", (folder_id,))
-    folder = c.fetchone()
-    if not folder:
-        return "Priečinok neexistuje", 404
-    old_name = folder['name']
-    error = None
-    if request.method == 'POST':
-        new_name = request.form.get('name').strip()
-        if new_name == '':
-            error = "Názov priečinka nemôže byť prázdny."
-        else:
-            c.execute("SELECT COUNT(*) FROM folders WHERE name=%s AND id!=%s", (new_name, folder_id))
-            count = c.fetchone()[0]
-            if count > 0:
-                error = "Priečinok s týmto názvom už existuje."
-            else:
-                c.execute("UPDATE folders SET name=%s WHERE id=%s", (new_name, folder_id))
-                conn.commit()
-                return redirect(url_for('index'))
-    return render_template('folder_edit.html', mode='edit', folder_id=folder_id, old_name=old_name, error=error)
+    c.execute("SELECT * FROM pages WHERE slug=%s", (slug,))
+    page = c.fetchone()
+    if not page:
+        return "Stránka neexistuje", 404
 
-@app.route('/delete_folder', methods=['POST'])
-def delete_folder():
-    if not is_admin():
-        return jsonify({"error": "Not allowed"}), 403
-    folder_id = request.form.get('folder_id')
-    if not folder_id:
-        return "folder_id missing", 400
-    try:
-        conn = get_db()
-        c = conn.cursor()
-        # Najprv odstránime priečinok, čo automaticky odstráni aj všetky stránky v ňom vďaka FOREIGN KEY s ON DELETE CASCADE
-        c.execute("DELETE FROM folders WHERE id=%s", (folder_id,))
-        conn.commit()
-        return redirect(url_for('index'))
-    except Exception as e:
-        print("Error deleting folder:", e)
-        return "Internal Server Error", 500
+    error = None
+    page_id = page['id']
+
+    c.execute("""
+        SELECT t.id
+        FROM tags t
+        JOIN page_tags pt ON pt.tag_id = t.id
+        WHERE pt.page_id=%s AND t.name<>'stránka'
+        ORDER BY t.name
+    """, (page_id,))
+    page_tags_ids = [r['id'] for r in c.fetchall()]
+
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        content = request.form.get('content', '')
+        visible_to = request.form.get('visible_to', 'All')
+        selected_tag_ids = request.form.getlist('tag_ids')
+        selected_tag_ids = [int(x) for x in selected_tag_ids]
+
+        if not title:
+            error = "Názov stránky nesmie byť prázdny"
+        else:
+            # Vygeneruj slug znova z nového titulu
+            new_slug = generate_slug(title, c, existing_id=page_id)
+            try:
+                c.execute("""
+                    UPDATE pages
+                    SET title=%s, content=%s, visible_to=%s, updated_at=NOW(), slug=%s
+                    WHERE id=%s
+                """, (title, content, visible_to, new_slug, page_id))
+                # zmaž existujúce tagy (okrem 'stránka'), vlož tie, čo user vybral
+                c.execute("""
+                    DELETE FROM page_tags
+                    USING tags
+                    WHERE page_tags.tag_id=tags.id
+                      AND tags.name<>'stránka'
+                      AND page_tags.page_id=%s
+                """, (page_id,))
+                for t_id in selected_tag_ids:
+                    c.execute("INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                              (page_id, t_id))
+                conn.commit()
+                return redirect(url_for('view_page', slug=new_slug))
+            except Exception as e:
+                conn.rollback()
+                error = f"Chyba pri ukladaní: {str(e)}"
+
+    c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
+    all_tags = c.fetchall()
+
+    return render_template('page_edit.html',
+                           mode='edit',
+                           page=page,
+                           all_tags=all_tags,
+                           page_tags=page_tags_ids,
+                           editing_page=True,
+                           error=error)
+
+@app.route('/page/<slug>')
+def view_page(slug):
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT p.id, p.title, p.content, p.visible_to, p.slug,
+               COALESCE(json_agg(json_build_object('tag_id', t.id, 'name', t.name, 'color', t.color)
+                                 ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '[]') as tags
+        FROM pages p
+        LEFT JOIN page_tags pt ON p.id = pt.page_id
+        LEFT JOIN tags t ON pt.tag_id = t.id AND t.name <> 'stránka'
+        WHERE p.slug=%s
+        GROUP BY p.id;
+    """, (slug,))
+    row = c.fetchone()
+    if not row:
+        return "Stránka neexistuje", 404
+
+    if row['visible_to'] == 'Admin' and not is_admin():
+        return "Nemáte oprávnenie zobraziť túto stránku.", 403
+
+    html_content = md.markdown(row['content'] or '', extensions=['extra'])
+    html_content = process_images(html_content)
+
+    return render_template('page_view.html',
+                           page_id=row['id'],  # pre partial/right_panel
+                           title=row['title'],
+                           content=html_content,
+                           page_tags=row['tags'],
+                           slug=row['slug'])
 
 @app.route('/delete_page', methods=['POST'])
 def delete_page():
@@ -403,16 +519,15 @@ def delete_page():
         return jsonify({"error": "Not allowed"}), 403
     page_id = request.form.get('page_id')
     if not page_id:
-        return "page_id missing", 400
+        return jsonify({"error":"page_id missing"}), 400
     try:
         conn = get_db()
         c = conn.cursor()
         c.execute("DELETE FROM pages WHERE id=%s", (page_id,))
         conn.commit()
-        return redirect(url_for('index'))
+        return jsonify({"success": True})  # Vraciame JSON (Ajax)
     except Exception as e:
-        print("Error deleting page:", e)
-        return "Internal Server Error", 500
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

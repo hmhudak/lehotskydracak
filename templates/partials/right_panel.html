@@ -4,6 +4,76 @@
         <div class="card-body" style="font-family:'Lato', sans-serif;">
             <p>Dátum: {{ now|default("") }}</p>
             <p>Rola: {% if session.user %}{{ session.user.role }}{% endif %}</p>
+
+            {% if editing_page %}
+              <div class="mb-3 d-flex gap-2 align-items-center">
+                <button type="submit" class="btn btn-sm btn-success" title="Uložiť">
+                  <i class="fas fa-save"></i>
+                </button>
+                {% if mode == 'edit' and page and page.id %}
+                  <!-- form pre mazanie stránky, ale bez confirm => script.js -> modal -->
+                  <form method="post" action="{{ url_for('delete_page') }}">
+                    <input type="hidden" name="page_id" value="{{ page.id }}">
+                    <button type="submit" class="btn btn-sm btn-danger" title="Zmazať stránku">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
+
+              <label class="form-label">Štítky:</label>
+              <div id="tag-list" style="position:relative; margin-bottom:1rem;">
+                {% for t in all_tags %}
+                <div class="form-check d-flex align-items-center mb-1" data-tag-id="{{ t.id }}">
+                  <input class="form-check-input" type="checkbox" name="tag_ids" value="{{ t.id }}" id="tag-{{t.id}}"
+                    {% if mode=='edit' and t.id in page_tags %}checked{% endif %}>
+                  <label class="form-check-label ms-1" for="tag-{{t.id}}">
+                    <span style="background:{{t.color}}; color:#fff; padding:2px 4px; border-radius:4px;">{{t.name}}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+
+              <div class="mb-3 d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm px-2 py-0 btn-outline-primary"
+                        id="toggle-new-tag-form" title="Pridať štítok">
+                  <i class="fas fa-plus"></i>
+                </button>
+                <button type="button" class="btn btn-sm px-2 py-0 btn-danger"
+                        id="delete-tag-btn" title="Zmazať štítky">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+
+              <!-- Panel na nový štítok (riadky zvlášť) -->
+              <div class="border p-2 rounded mb-3" id="new-tag-panel" style="display:none;">
+                <label class="form-label">Názov:</label>
+                <input type="text" id="new-tag-name" class="form-control" placeholder="štítok1">
+
+                <label class="form-label mt-2">Farba:</label>
+                <input type="color" id="new-tag-color" class="form-control form-control-color"
+                       value="#dd4477" title="Vyber farbu štítku">
+
+                <button type="button" class="btn btn-sm btn-success px-2 py-0 mt-2"
+                        id="new-tag-button">OK</button>
+              </div>
+
+            {% else %}
+              {% if session.user and session.user.role == 'Admin' and page_id %}
+                <div class="mt-3 d-flex gap-2 align-items-center">
+                  <a class="btn btn-sm btn-outline-dark" href="{{ url_for('edit_page', slug=slug) }}" title="Upraviť">
+                    <i class="fas fa-edit"></i>
+                  </a>
+                  <!-- Mazanie stránky -->
+                  <form method="post" action="{{ url_for('delete_page') }}">
+                    <input type="hidden" name="page_id" value="{{ page_id }}">
+                    <button type="submit" class="btn btn-sm btn-danger" title="Zmazať">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                </div>
+              {% endif %}
+            {% endif %}
         </div>
     </div>
 </div>

@@ -83,9 +83,36 @@ figure {
     clear: both;
 }
 
-/* Uistite sa, že figure neovplyvňuje ostatný obsah */
 figure::after {
     content: "";
     display: table;
     clear: both;
+}
+
+/* 
+   Sticky left panel:
+   - position: sticky;
+   - top: 70px (aby nenarazil na navbar)
+   - align-self: flex-start (nech ho flex layout nevynucuje roztiahnuť)
+   - max-height + overflow-y => scrollbar v paneli, ak je dlhý
+*/
+.left-panel-sticky {
+    position: sticky;
+    top: 70px;
+    align-self: flex-start; 
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+}
+
+
+.form-check-input:checked {
+    background-color: green; /* Farba v stave ON */
+}
+
+.form-check-input {
+    background-color: red; /* Farba v stave ON */
+}
+
+.form-check-input::before {
+    color: white;
 }

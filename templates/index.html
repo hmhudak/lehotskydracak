@@ -1,62 +1,26 @@
 {% extends 'layout.html' %}
+
 {% block content %}
-<h2 class="mb-4" style="font-family:'Marcellus', serif;">Zoznam priečinkov a stránok</h2>
+<h2 class="mb-4" style="font-family:'Marcellus', serif;">Zoznam stránok</h2>
 
-{% if session.user.role == "Admin" %}
-<p><a href="{{ url_for('add_folder') }}" class="btn btn-sm btn-outline-dark"><i class="fas fa-folder-plus"></i> Pridať nový priečinok</a></p>
-{% endif %}
-
-{% for f_id, f_name, pages in folders %}
-<div class="card mb-3 folder-card">
-    <div class="card-header d-flex justify-content-between align-items-center folder-header" style="font-family:'Marcellus', serif;">
-        <span>{{ f_name }}</span>
-        {% if session.user.role == "Admin" %}
-        <div>
-            <a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark me-1" title="Pridať stránku"><i class="fas fa-plus"></i></a>
-            <a href="{{ url_for('rename_folder', folder_id=f_id) }}" class="btn btn-sm btn-outline-primary me-1" title="Premenovať priečinok"><i class="fas fa-edit"></i></a>
-            <!-- Tlačidlo na zmazanie priečinka -->
-            <button class="btn btn-sm btn-outline-danger delete-folder-btn" data-bs-toggle="modal" data-bs-target="#deleteFolderModal" data-folder_id="{{ f_id }}" data-folder_name="{{ f_name }}" title="Zmazať priečinok">
-                <i class="fas fa-trash"></i>
-            </button>
-        </div>
-        {% endif %}
-    </div>
-    <div class="card-body" style="font-family:'Lato', sans-serif;">
-        {% if pages|length == 0 %}
-        <p>Žiadne stránky.</p>
-        {% else %}
-        <ul>
-            {% for p_title, p_id in pages %}
-            <li>
-                <a href="{{ url_for('view_page', page_id=p_id) }}">{{ p_title }}</a>
-            </li>
-            {% endfor %}
-        </ul>
-        {% endif %}
-    </div>
-</div>
-{% endfor %}
-
-<!-- Modal na zmazanie priečinka -->
-<div class="modal fade" id="deleteFolderModal" tabindex="-1" aria-labelledby="deleteFolderModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <form method="post" action="{{ url_for('delete_folder') }}">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Zmazať priečinok</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zatvoriť"></button>
-        </div>
-        <div class="modal-body">
-          <p>Naozaj chcete zmazať priečinok <strong id="delete-folder-name"></strong> a všetky jeho stránky?</p>
-          <input type="hidden" name="folder_id" id="delete-folder-id-input" value="">
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zrušiť</button>
-          <button type="submit" class="btn btn-danger">Zmazať</button>
-        </div>
-      </div>
-    </form>
+<div class="mb-3" style="font-family:'Lato', sans-serif;">
+  <label>Filter (vyber štítky):</label><br>
+  <div id="tag-filter" class="mb-2" style="display:flex; flex-wrap:wrap;"></div>
+  <div class="form-check form-switch">
+    <input class="form-check-input" type="checkbox" role="switch" id="filter-mode-toggle" value="and">
+    <label class="form-check-label" for="filter-mode-toggle">AND filter</label>
+    <small class="text-muted d-block">Ak je vypnuté, používa sa OR filter.</small>
   </div>
 </div>
+
+<div id="page-list" style="font-family:'Lato', sans-serif;"></div>
+
+{% if session.user.role == "Admin" %}
+<p class="mt-4">
+  <a href="{{ url_for('add_page') }}" class="btn btn-sm btn-outline-dark">
+    <i class="fas fa-plus"></i> Pridať novú stránku
+  </a>
+</p>
+{% endif %}
 
 {% endblock %}

@@ -1,5 +1,5 @@
-<div class="col-md-2 col-lg-2 mb-3">
-    <div class="card shadow-sm">
+<div class="col-md-2 col-lg-2 mb-3 left-panel-sticky">
+    <div class="card shadow-sm mb-3">
         <div class="card-header bg-brown text-white" style="font-family:'Marcellus', serif;">Menu</div>
         <div class="card-body" style="font-family:'Lato', sans-serif;">
             <ul class="list-unstyled">
@@ -7,4 +7,25 @@
             </ul>
         </div>
     </div>
+
+    {% if editing_page %}
+    <div class="card shadow-sm">
+        <div class="card-header bg-brown text-white" style="font-family:'Marcellus', serif;">Nástroje</div>
+        <div class="card-body" style="font-family:'Lato', sans-serif;">
+            <div class="d-flex flex-column gap-1">
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="1">H1</button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="2">H2</button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="3">H3</button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="heading" data-level="4">H4</button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="bold"><i class="fas fa-bold"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="italic"><i class="fas fa-italic"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="hr">HR</button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="link"><i class="fas fa-link"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="image"><i class="fas fa-image"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="ul"><i class="fas fa-list-ul"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-dark" data-action="ol"><i class="fas fa-list-ol"></i></button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
