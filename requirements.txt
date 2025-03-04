@@ -6,5 +6,5 @@ psycopg2-binary==2.9.6
 gunicorn==20.1.0
 cloudinary==1.29.0
 python-dotenv==1.0.0
-authlib
+authlib==1.2.0
 requests

@@ -19,21 +19,22 @@ from authlib.integrations.flask_client import OAuth
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'verysecretkey')
 
-# Google OAuth nastavenie
+# Google OAuth nastavenie - používame Discovery (server_metadata_url)
 oauth = OAuth(app)
 google = oauth.register(
     name='google',
     client_id=os.environ.get('GOOGLE_CLIENT_ID'),
     client_secret=os.environ.get('GOOGLE_CLIENT_SECRET'),
-    access_token_url='https://oauth2.googleapis.com/token',
-    access_token_params=None,
-    authorize_url='https://accounts.google.com/o/oauth2/v2/auth',
+    # Discovery dokument (obsahuje jwks_uri, authorization_endpoint, token_endpoint, atď.)
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+
+    # Parametre pre "authorize" požiadavku
     authorize_params={
         'prompt': 'consent',
-        'access_type': 'offline',
-        'scope': 'openid email profile'
+        'access_type': 'offline'
     },
-    api_base_url='https://www.googleapis.com/oauth2/v2/',
+
+    # Nastavenie scope
     client_kwargs={'scope': 'openid email profile'}
 )
 
@@ -53,13 +54,13 @@ def close_connection(exception):
 
 def init_db():
     """
-    Inicializácia DB. Vytvorí tabuľky, ak neexistujú. 
-    Tuto nezabudni na CREATE TABLE users, 
-    ale môžeš to riešiť aj oddelene cez SQL skript.
+    Inicializácia DB. Vytvorí tabuľky, ak neexistujú.
+    Nezabudni si vytvoriť aj tabuľku users (či už tu, alebo osobitne).
     """
     conn = get_db()
     c = conn.cursor()
-    # Pôvodné: pages, tags...
+
+    # -- Pôvodné tabuľky: pages, tags, page_tags --
     c.execute("""
         CREATE TABLE IF NOT EXISTS pages (
             id SERIAL PRIMARY KEY,
@@ -88,8 +89,7 @@ def init_db():
         );
     """)
 
-    # +++ Kľudne tu môžeš pridať aj CREATE TABLE users,
-    # alebo ho vytvoríš samostatne ako si písal. +++
+    # Tu môžeš pridať aj CREATE TABLE users, ak ho nechceš riešiť samostatným skriptom.
 
     conn.commit()
 
@@ -124,9 +124,8 @@ def generate_slug(title, c, existing_id=None):
         row = c.fetchone()
         if not row:
             return candidate
-        else:
-            candidate = slug + f"-{i}"
-            i += 1
+        candidate = slug + f"-{i}"
+        i += 1
 
 def process_images(html):
     soup = BeautifulSoup(html, 'html.parser')
@@ -180,7 +179,8 @@ def process_images(html):
 
     return str(soup)
 
-# -------- Google OAuth routes --------
+
+# ---------- Google OAuth routes ----------
 
 @app.route('/auth')
 def auth():
@@ -188,18 +188,18 @@ def auth():
     Spustí OAuth flow - presmeruje na Google.
     """
     if is_logged_in():
-        return redirect(url_for('index'))  # Už prihlásený
+        return redirect(url_for('index'))
     redirect_uri = url_for('auth_callback', _external=True)
     return google.authorize_redirect(redirect_uri)
 
 @app.route('/auth/callback')
 def auth_callback():
     """
-    Google nás presmeruje sem po úspešnom prihlásení.
-    Získame token a info o používateľovi, uložíme ho do DB.
+    Google presmeruje späť sem po úspešnom prihlásení.
     """
-    token = google.authorize_access_token()  # získa token
-    resp = google.get('userinfo')           # volanie "https://www.googleapis.com/oauth2/v2/userinfo"
+    token = google.authorize_access_token()
+    # Získame základné info o používateľovi
+    resp = google.get('userinfo')  # https://www.googleapis.com/oauth2/v2/userinfo
     profile = resp.json()
 
     email = profile.get('email')
@@ -209,10 +209,10 @@ def auth_callback():
     if not email:
         return "Nepodarilo sa získať email z Google profilu.", 400
 
-    # Ulož/načítaj usera z DB:
+    # Uložíme / načítame usera z DB
     user_data = load_or_create_user(email, first_name, last_name)
 
-    # Ulož usera do session:
+    # Uloženie do session
     session['user'] = {
         'id': user_data['id'],
         'email': user_data['email'],
@@ -225,23 +225,23 @@ def auth_callback():
 
 def load_or_create_user(email, first_name, last_name):
     """
-    Zistí, či máme v DB aspoň jedného usera. 
-    - Ak nie, prvý prihlásený sa stáva Admin.
-    - Inak, ak user s daným emailom neexistuje, stáva sa Player.
-    - Ak už existuje, iba ho načítame.
+    Ak v DB nie je ani jeden user, prvý bude Admin, inak Player.
+    Ak user s emailom ešte neexistuje, vloží ho.
+    Ak existuje, iba updatujeme mená.
     """
     conn = get_db()
     c = conn.cursor()
 
-    # Koľko userov celkovo?
+    # Koľko userov celkovo
     c.execute("SELECT COUNT(*) FROM users")
     count_all = c.fetchone()[0]
 
-    # Nájdeme usera podľa emailu:
+    # Skúsime nájsť usera s daným emailom
     c.execute("SELECT * FROM users WHERE email=%s", (email,))
     row = c.fetchone()
+
     if row:
-        # Aktualizujeme mená (napr. ak user v Google zmenil meno)
+        # Update first_name, last_name (napr. ak na Google zmenil meno)
         c.execute("""UPDATE users 
                      SET first_name=%s, last_name=%s
                      WHERE email=%s
@@ -251,10 +251,11 @@ def load_or_create_user(email, first_name, last_name):
         conn.commit()
         return updated_row
     else:
-        # Prvý user v systéme => rola Admin, inak Player
+        # Ak je to prvý user v DB, bude Admin, inak Player
         new_role = 'Admin' if count_all == 0 else 'Player'
         c.execute("""INSERT INTO users (email, first_name, last_name, role)
-                     VALUES (%s, %s, %s, %s) RETURNING *""",
+                     VALUES (%s, %s, %s, %s)
+                     RETURNING *""",
                   (email, first_name, last_name, new_role))
         new_row = c.fetchone()
         conn.commit()
@@ -265,23 +266,23 @@ def logout():
     session.pop('user', None)
     return redirect(url_for('index'))
 
-# ------------- BEZ /login (pôvodný) -------------
 
+# ---------- Hlavná stránka / ----------
 
 @app.route('/')
 def index():
     if not is_logged_in():
-        # Nepýtame login form, rovno nasmerujeme na Google
+        # ak nie je prihlásený, presmeruj rovno na Google OAuth
         return redirect(url_for('auth'))
     return render_template('index.html')
 
 
-# ------------- Admin sekcia - správa používateľov -------------
+# ---------- Admin sekcia - správa používateľov ----------
 
 @app.route('/admin/users')
 def manage_users():
     """
-    Zobrazí zoznam používateľov, admin môže meniť ich rolu.
+    Zobrazí zoznam používateľov, admin môže meniť rolu.
     """
     if not is_admin():
         return "Nemáte oprávnenie.", 403
@@ -296,15 +297,15 @@ def manage_users():
 def update_role():
     if not is_admin():
         return jsonify({"error": "Not allowed"}), 403
+
     user_id = request.form.get('user_id')
     new_role = request.form.get('role')
+
     if not user_id or not new_role:
         return jsonify({"error": "Chýba user_id alebo role"}), 400
+
     conn = get_db()
     c = conn.cursor()
-
-    # Nechceme prísť o situáciu, kde by sme zrušili všetkých adminov
-    # (ale to by bol doplnkový check - tu to necháme jednoduché).
     try:
         c.execute("UPDATE users SET role=%s WHERE id=%s", (new_role, user_id))
         conn.commit()
@@ -314,9 +315,7 @@ def update_role():
         return jsonify({"error": str(e)}), 500
 
 
-# -------------------------------------------------
-#               Pôvodný kód: pages, tags, ...
-# -------------------------------------------------
+# ----------- API pre stránky, štítky, atď. -----------
 
 @app.route('/api/pages')
 def api_pages():
@@ -379,11 +378,11 @@ def api_tags():
 @app.route('/create_tag', methods=['POST'])
 def create_tag():
     if not is_admin():
-        return jsonify({"error":"Not allowed"}), 403
+        return jsonify({"error": "Not allowed"}), 403
     tag_name = request.form.get('name', '').strip()
     tag_color = request.form.get('color', '').strip()
     if not tag_name or not tag_color:
-        return jsonify({"error":"Chýba meno alebo farba štítku."}), 400
+        return jsonify({"error": "Chýba meno alebo farba štítku."}), 400
     conn = get_db()
     c = conn.cursor()
     try:
@@ -443,7 +442,9 @@ def list_images():
     if not is_admin():
         return redirect(url_for('index'))
     try:
-        resources = cloudinary.api.resources(type='upload', prefix='lehotskydracak/', max_results=100)
+        resources = cloudinary.api.resources(
+            type='upload', prefix='lehotskydracak/', max_results=100
+        )
     except Exception as e:
         print("Cloudinary list error:", e)
         resources = {'resources': []}
@@ -457,7 +458,9 @@ def api_list_images():
     if not is_admin():
         return jsonify({"images":[]})
     try:
-        resources = cloudinary.api.resources(type='upload', prefix='lehotskydracak/', max_results=100)
+        resources = cloudinary.api.resources(
+            type='upload', prefix='lehotskydracak/', max_results=100
+        )
         images = []
         for r in resources.get('resources', []):
             images.append({'public_id': r['public_id'], 'url': r['secure_url']})
@@ -479,6 +482,8 @@ def delete_image():
     else:
         return "Chyba pri mazaní obrázka", 500
 
+
+# ------------ Tvorba / úprava stránok ------------
 @app.route('/add', methods=['GET','POST'])
 def add_page():
     if not is_admin():
@@ -486,12 +491,14 @@ def add_page():
     conn = get_db()
     c = conn.cursor()
     error = None
+
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
         content = request.form.get('content', '')
         visible_to = request.form.get('visible_to', 'All')
         selected_tag_ids = request.form.getlist('tag_ids')
         selected_tag_ids = [int(x) for x in selected_tag_ids]
+
         if not title:
             error = "Názov stránky nesmie byť prázdny"
         else:
@@ -504,6 +511,7 @@ def add_page():
                 """, (title, content, visible_to, slug))
                 new_page_id = c.fetchone()[0]
 
+                # Vložíme špeciálny tag 'stránka' (ak ešte nie je)
                 c.execute("SELECT id FROM tags WHERE name='stránka'")
                 row_t = c.fetchone()
                 if not row_t:
@@ -514,17 +522,24 @@ def add_page():
 
                 c.execute("INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)", (new_page_id, page_tag_id))
                 for t_id in selected_tag_ids:
-                    c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING""", (new_page_id, t_id))
+                    c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)
+                                 ON CONFLICT DO NOTHING""", (new_page_id, t_id))
                 conn.commit()
                 return redirect(url_for('view_page', slug=slug))
             except Exception as e:
                 conn.rollback()
                 error = f"Chyba pri ukladaní: {str(e)}"
 
+    # Všetky existujúce tags okrem 'stránka'
     c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
     all_tags = c.fetchall()
-    return render_template('page_edit.html', mode='add', page=None,
-                           all_tags=all_tags, page_tags=[], editing_page=True, error=error)
+    return render_template('page_edit.html',
+                           mode='add',
+                           page=None,
+                           all_tags=all_tags,
+                           page_tags=[],
+                           editing_page=True,
+                           error=error)
 
 @app.route('/edit/<slug>', methods=['GET','POST'])
 def edit_page(slug):
@@ -540,11 +555,13 @@ def edit_page(slug):
     error = None
     page_id = page['id']
 
+    # Zisti, ktoré tagy patria tejto stránke (okrem 'stránka')
     c.execute("""
         SELECT t.id
         FROM tags t
         JOIN page_tags pt ON pt.tag_id = t.id
-        WHERE pt.page_id=%s AND t.name<>'stránka'
+        WHERE pt.page_id=%s
+          AND t.name<>'stránka'
         ORDER BY t.name
     """, (page_id,))
     page_tags_ids = [r['id'] for r in c.fetchall()]
@@ -566,6 +583,8 @@ def edit_page(slug):
                     SET title=%s, content=%s, visible_to=%s, updated_at=NOW(), slug=%s
                     WHERE id=%s
                 """, (title, content, visible_to, new_slug, page_id))
+
+                # Zmažeme staré väzby (okrem 'stránka'), potom vložíme nové.
                 c.execute("""
                     DELETE FROM page_tags
                     USING tags
@@ -574,8 +593,9 @@ def edit_page(slug):
                       AND page_tags.page_id=%s
                 """, (page_id,))
                 for t_id in selected_tag_ids:
-                    c.execute("INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                              (page_id, t_id))
+                    c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)
+                                 ON CONFLICT DO NOTHING""", (page_id, t_id))
+
                 conn.commit()
                 return redirect(url_for('view_page', slug=new_slug))
             except Exception as e:
@@ -593,10 +613,11 @@ def edit_page(slug):
                            editing_page=True,
                            error=error)
 
+
 @app.route('/page/<slug>')
 def view_page(slug):
     if not is_logged_in():
-        return redirect(url_for('auth'))  # pri prvom vstupe
+        return redirect(url_for('auth'))
     conn = get_db()
     c = conn.cursor()
     c.execute("""
@@ -632,7 +653,7 @@ def delete_page():
         return jsonify({"error": "Not allowed"}), 403
     page_id = request.form.get('page_id')
     if not page_id:
-        return jsonify({"error":"page_id missing"}), 400
+        return jsonify({"error": "page_id missing"}), 400
     try:
         conn = get_db()
         c = conn.cursor()
@@ -640,8 +661,11 @@ def delete_page():
         conn.commit()
         return jsonify({"success": True})
     except Exception as e:
+        conn.rollback()
         return jsonify({"error": str(e)}), 500
 
+
+# ------------- Spustenie aplikácie -------------
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
