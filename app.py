@@ -13,20 +13,33 @@ import cloudinary.api
 import unicodedata
 import re
 
+# AUTHLIB
+from authlib.integrations.flask_client import OAuth
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'verysecretkey')
+
+# Google OAuth nastavenie
+oauth = OAuth(app)
+google = oauth.register(
+    name='google',
+    client_id=os.environ.get('GOOGLE_CLIENT_ID'),
+    client_secret=os.environ.get('GOOGLE_CLIENT_SECRET'),
+    access_token_url='https://oauth2.googleapis.com/token',
+    access_token_params=None,
+    authorize_url='https://accounts.google.com/o/oauth2/v2/auth',
+    authorize_params={
+        'prompt': 'consent',
+        'access_type': 'offline',
+        'scope': 'openid email profile'
+    },
+    api_base_url='https://www.googleapis.com/oauth2/v2/',
+    client_kwargs={'scope': 'openid email profile'}
+)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 CLOUDINARY_URL = os.environ.get('CLOUDINARY_URL')
 cloudinary.config(cloudinary_url=CLOUDINARY_URL)
-
-USERS = {
-    "admin@admin.com": {"password": "Adminadmin1", "role": "Admin"},
-    "example2@gmail.com": {"password": "Abcdefghij1", "role": "Admin"},
-    "example3@gmail.com": {"password": "Abcdefghij1", "role": "Player"},
-    "example4@gmail.com": {"password": "Abcdefghij1", "role": "Player"},
-    "example5@gmail.com": {"password": "Abcdefghij1", "role": "Player"},
-}
 
 def get_db():
     if not hasattr(g, 'db_conn'):
@@ -39,9 +52,14 @@ def close_connection(exception):
         g.db_conn.close()
 
 def init_db():
+    """
+    Inicializácia DB. Vytvorí tabuľky, ak neexistujú. 
+    Tuto nezabudni na CREATE TABLE users, 
+    ale môžeš to riešiť aj oddelene cez SQL skript.
+    """
     conn = get_db()
     c = conn.cursor()
-    # Pridaj stĺpec slug, ak neexistuje
+    # Pôvodné: pages, tags...
     c.execute("""
         CREATE TABLE IF NOT EXISTS pages (
             id SERIAL PRIMARY KEY,
@@ -53,7 +71,6 @@ def init_db():
             slug TEXT
         );
     """)
-    # CREATE UNIQUE INDEX, ak chceš jedinečný slug:
     c.execute("""
         CREATE TABLE IF NOT EXISTS tags (
             id SERIAL PRIMARY KEY,
@@ -70,6 +87,10 @@ def init_db():
             FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
         );
     """)
+
+    # +++ Kľudne tu môžeš pridať aj CREATE TABLE users,
+    # alebo ho vytvoríš samostatne ako si písal. +++
+
     conn.commit()
 
 with app.app_context():
@@ -82,33 +103,21 @@ def is_admin():
     return is_logged_in() and session['user']['role'] == 'Admin'
 
 def remove_diacritics(text):
-    # Odstránime diakritiku
     nfkd_form = unicodedata.normalize('NFKD', text)
     only_ascii = nfkd_form.encode('ASCII', 'ignore').decode('ASCII')
     return only_ascii
 
 def generate_slug(title, c, existing_id=None):
-    """
-    Vygeneruje slug z title tak, že odstráni diakritiku, 
-    nealfanumerické nahradí za ' ', potom nahradí medzery +, 
-    a ošetrí duplicity (ak je slug už v DB).
-    Param c je db cursor. existing_id je ID stránky, pre ktorú to generujeme pri editácii.
-    """
     base = remove_diacritics(title)
-    # nahradíme všetko okrem alnum a space za ' '
     base = re.sub(r'[^a-zA-Z0-9\s]+', '', base)
-    # stlačíme viac space
     base = re.sub(r'\s+', ' ', base).strip()
-    # medzery => '+'
     base = base.replace(' ', '+')
     slug = base.lower() if base else 'stranka'
 
-    # overíme, či slug existuje
-    # ak slug= moj+fantasticky+title, a existuje, tak pridáme -2, -3 atď.
     candidate = slug
     i = 2
     while True:
-        if existing_id: 
+        if existing_id:
             c.execute("SELECT id FROM pages WHERE slug=%s AND id<>%s", (candidate, existing_id))
         else:
             c.execute("SELECT id FROM pages WHERE slug=%s", (candidate,))
@@ -171,29 +180,143 @@ def process_images(html):
 
     return str(soup)
 
-@app.route('/login', methods=['GET','POST'])
-def login():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        user = USERS.get(email)
-        if user and user['password'] == password:
-            session['user'] = {"email": email, "role": user['role']}
-            return redirect(url_for('index'))
-        else:
-            return render_template('login.html', error="Nesprávny email alebo heslo.")
-    return render_template('login.html')
+# -------- Google OAuth routes --------
+
+@app.route('/auth')
+def auth():
+    """
+    Spustí OAuth flow - presmeruje na Google.
+    """
+    if is_logged_in():
+        return redirect(url_for('index'))  # Už prihlásený
+    redirect_uri = url_for('auth_callback', _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+@app.route('/auth/callback')
+def auth_callback():
+    """
+    Google nás presmeruje sem po úspešnom prihlásení.
+    Získame token a info o používateľovi, uložíme ho do DB.
+    """
+    token = google.authorize_access_token()  # získa token
+    resp = google.get('userinfo')           # volanie "https://www.googleapis.com/oauth2/v2/userinfo"
+    profile = resp.json()
+
+    email = profile.get('email')
+    first_name = profile.get('given_name', '')
+    last_name = profile.get('family_name', '')
+
+    if not email:
+        return "Nepodarilo sa získať email z Google profilu.", 400
+
+    # Ulož/načítaj usera z DB:
+    user_data = load_or_create_user(email, first_name, last_name)
+
+    # Ulož usera do session:
+    session['user'] = {
+        'id': user_data['id'],
+        'email': user_data['email'],
+        'role': user_data['role'],
+        'first_name': user_data['first_name'],
+        'last_name': user_data['last_name']
+    }
+
+    return redirect(url_for('index'))
+
+def load_or_create_user(email, first_name, last_name):
+    """
+    Zistí, či máme v DB aspoň jedného usera. 
+    - Ak nie, prvý prihlásený sa stáva Admin.
+    - Inak, ak user s daným emailom neexistuje, stáva sa Player.
+    - Ak už existuje, iba ho načítame.
+    """
+    conn = get_db()
+    c = conn.cursor()
+
+    # Koľko userov celkovo?
+    c.execute("SELECT COUNT(*) FROM users")
+    count_all = c.fetchone()[0]
+
+    # Nájdeme usera podľa emailu:
+    c.execute("SELECT * FROM users WHERE email=%s", (email,))
+    row = c.fetchone()
+    if row:
+        # Aktualizujeme mená (napr. ak user v Google zmenil meno)
+        c.execute("""UPDATE users 
+                     SET first_name=%s, last_name=%s
+                     WHERE email=%s
+                     RETURNING *""",
+                  (first_name, last_name, email))
+        updated_row = c.fetchone()
+        conn.commit()
+        return updated_row
+    else:
+        # Prvý user v systéme => rola Admin, inak Player
+        new_role = 'Admin' if count_all == 0 else 'Player'
+        c.execute("""INSERT INTO users (email, first_name, last_name, role)
+                     VALUES (%s, %s, %s, %s) RETURNING *""",
+                  (email, first_name, last_name, new_role))
+        new_row = c.fetchone()
+        conn.commit()
+        return new_row
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
-    return redirect(url_for('login'))
+    return redirect(url_for('index'))
+
+# ------------- BEZ /login (pôvodný) -------------
+
 
 @app.route('/')
 def index():
     if not is_logged_in():
-        return redirect(url_for('login'))
+        # Nepýtame login form, rovno nasmerujeme na Google
+        return redirect(url_for('auth'))
     return render_template('index.html')
+
+
+# ------------- Admin sekcia - správa používateľov -------------
+
+@app.route('/admin/users')
+def manage_users():
+    """
+    Zobrazí zoznam používateľov, admin môže meniť ich rolu.
+    """
+    if not is_admin():
+        return "Nemáte oprávnenie.", 403
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, email, first_name, last_name, role FROM users ORDER BY email")
+    users = c.fetchall()
+    return render_template('manage_users.html', users=users)
+
+@app.route('/admin/update_role', methods=['POST'])
+def update_role():
+    if not is_admin():
+        return jsonify({"error": "Not allowed"}), 403
+    user_id = request.form.get('user_id')
+    new_role = request.form.get('role')
+    if not user_id or not new_role:
+        return jsonify({"error": "Chýba user_id alebo role"}), 400
+    conn = get_db()
+    c = conn.cursor()
+
+    # Nechceme prísť o situáciu, kde by sme zrušili všetkých adminov
+    # (ale to by bol doplnkový check - tu to necháme jednoduché).
+    try:
+        c.execute("UPDATE users SET role=%s WHERE id=%s", (new_role, user_id))
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# -------------------------------------------------
+#               Pôvodný kód: pages, tags, ...
+# -------------------------------------------------
 
 @app.route('/api/pages')
 def api_pages():
@@ -274,10 +397,6 @@ def create_tag():
 
 @app.route('/delete_tags', methods=['POST'])
 def delete_tags():
-    """
-    Vymaže viacero štítkov podľa checkboxov. Očakáva form data: tag_ids[], 
-    v tých ID-čkach. Napríklad: tag_ids=12&tag_ids=13
-    """
     if not is_admin():
         return jsonify({"error": "Not allowed"}), 403
     tag_ids = request.form.getlist('tag_ids[]')
@@ -286,7 +405,6 @@ def delete_tags():
     conn = get_db()
     c = conn.cursor()
     try:
-        # Pre každé ID => zmaž
         for tid in tag_ids:
             c.execute("DELETE FROM tags WHERE id=%s AND name<>'stránka'", (tid,))
         conn.commit()
@@ -377,9 +495,7 @@ def add_page():
         if not title:
             error = "Názov stránky nesmie byť prázdny"
         else:
-            # generuj slug
             slug = generate_slug(title, c)
-            # Vložíme novú stránku
             try:
                 c.execute("""
                     INSERT INTO pages (title, content, visible_to, created_at, updated_at, slug)
@@ -400,7 +516,6 @@ def add_page():
                 for t_id in selected_tag_ids:
                     c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING""", (new_page_id, t_id))
                 conn.commit()
-                # Presmeruj na /page/<slug>
                 return redirect(url_for('view_page', slug=slug))
             except Exception as e:
                 conn.rollback()
@@ -408,13 +523,13 @@ def add_page():
 
     c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
     all_tags = c.fetchall()
-    return render_template('page_edit.html', mode='add', page=None, all_tags=all_tags, page_tags=[], editing_page=True, error=error)
+    return render_template('page_edit.html', mode='add', page=None,
+                           all_tags=all_tags, page_tags=[], editing_page=True, error=error)
 
 @app.route('/edit/<slug>', methods=['GET','POST'])
 def edit_page(slug):
     if not is_admin():
         return redirect(url_for('index'))
-
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM pages WHERE slug=%s", (slug,))
@@ -444,7 +559,6 @@ def edit_page(slug):
         if not title:
             error = "Názov stránky nesmie byť prázdny"
         else:
-            # Vygeneruj slug znova z nového titulu
             new_slug = generate_slug(title, c, existing_id=page_id)
             try:
                 c.execute("""
@@ -452,7 +566,6 @@ def edit_page(slug):
                     SET title=%s, content=%s, visible_to=%s, updated_at=NOW(), slug=%s
                     WHERE id=%s
                 """, (title, content, visible_to, new_slug, page_id))
-                # zmaž existujúce tagy (okrem 'stránka'), vlož tie, čo user vybral
                 c.execute("""
                     DELETE FROM page_tags
                     USING tags
@@ -483,7 +596,7 @@ def edit_page(slug):
 @app.route('/page/<slug>')
 def view_page(slug):
     if not is_logged_in():
-        return redirect(url_for('login'))
+        return redirect(url_for('auth'))  # pri prvom vstupe
     conn = get_db()
     c = conn.cursor()
     c.execute("""
@@ -507,7 +620,7 @@ def view_page(slug):
     html_content = process_images(html_content)
 
     return render_template('page_view.html',
-                           page_id=row['id'],  # pre partial/right_panel
+                           page_id=row['id'],
                            title=row['title'],
                            content=html_content,
                            page_tags=row['tags'],
@@ -525,7 +638,7 @@ def delete_page():
         c = conn.cursor()
         c.execute("DELETE FROM pages WHERE id=%s", (page_id,))
         conn.commit()
-        return jsonify({"success": True})  # Vraciame JSON (Ajax)
+        return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

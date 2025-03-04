@@ -1,0 +1,37 @@
+{% extends 'layout.html' %}
+
+{% block content %}
+<h2 class="mb-4" style="font-family:'Marcellus', serif;">Správa používateľov</h2>
+
+<table class="table table-bordered" style="font-family:'Lato', sans-serif;">
+  <thead>
+    <tr>
+      <th>Email</th>
+      <th>Meno</th>
+      <th>Priezvisko</th>
+      <th>Rola</th>
+      <th>Akcia</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.email }}</td>
+      <td>{{ u.first_name }}</td>
+      <td>{{ u.last_name }}</td>
+      <td>{{ u.role }}</td>
+      <td>
+        <form method="post" action="{{ url_for('update_role') }}">
+          <input type="hidden" name="user_id" value="{{ u.id }}">
+          <select name="role" class="form-select form-select-sm d-inline-block w-auto">
+            <option value="Admin" {% if u.role == 'Admin' %}selected{% endif %}>Admin</option>
+            <option value="Player" {% if u.role == 'Player' %}selected{% endif %}>Player</option>
+          </select>
+          <button type="submit" class="btn btn-sm btn-primary">Zmeniť</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
