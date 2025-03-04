@@ -513,6 +513,7 @@ def add_page():
                            editing_page=True,
                            error=error)
 
+
 @app.route('/edit/<slug>', methods=['GET','POST'])
 def edit_page(slug):
     if not is_admin():
@@ -601,39 +602,6 @@ def edit_page(slug):
                            editing_page=True,
                            error=error)
 
-
-@app.route('/page/<slug>')
-def view_page(slug):
-    if not is_logged_in():
-        return redirect(url_for('auth'))
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""
-        SELECT p.id, p.title, p.content, p.visible_to, p.slug,
-               COALESCE(json_agg(json_build_object('tag_id', t.id, 'name', t.name, 'color', t.color)
-                                 ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '[]') as tags
-        FROM pages p
-        LEFT JOIN page_tags pt ON p.id = pt.page_id
-        LEFT JOIN tags t ON pt.tag_id = t.id AND t.name <> 'stránka'
-        WHERE p.slug=%s
-        GROUP BY p.id;
-    """, (slug,))
-    row = c.fetchone()
-    if not row:
-        return "Stránka neexistuje", 404
-
-    if row['visible_to'] == 'Admin' and not is_admin():
-        return "Nemáte oprávnenie zobraziť túto stránku.", 403
-
-    html_content = md.markdown(row['content'] or '', extensions=['extra'])
-    html_content = process_images(html_content)
-
-    return render_template('page_view.html',
-                           page_id=row['id'],
-                           title=row['title'],
-                           content=html_content,
-                           page_tags=row['tags'],
-                           slug=row['slug'])
 
 @app.route('/delete_page', methods=['POST'])
 def delete_page():
