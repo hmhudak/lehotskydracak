@@ -450,19 +450,18 @@ def add_page():
     conn = get_db()
     c = conn.cursor()
     error = None
-
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
         content = request.form.get('content', '')
         visible_to = request.form.get('visible_to', 'All')
         selected_tag_ids = request.form.getlist('tag_ids')
         selected_tag_ids = [int(x) for x in selected_tag_ids]
-
         if not title:
             error = "Názov stránky nesmie byť prázdny"
         else:
             slug = generate_slug(title, c)
             try:
+                # Vloženie novej stránky
                 c.execute("""
                     INSERT INTO pages (title, content, visible_to, created_at, updated_at, slug)
                     VALUES (%s, %s, %s, NOW(), NOW(), %s)
@@ -470,6 +469,7 @@ def add_page():
                 """, (title, content, visible_to, slug))
                 new_page_id = c.fetchone()[0]
 
+                # Vloženie špeciálneho tagu 'stránka' (ak neexistuje)
                 c.execute("SELECT id FROM tags WHERE name='stránka'")
                 row_t = c.fetchone()
                 if not row_t:
@@ -478,16 +478,31 @@ def add_page():
                 else:
                     page_tag_id = row_t[0]
 
+                # page_tags pre novú stránku
                 c.execute("INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)", (new_page_id, page_tag_id))
                 for t_id in selected_tag_ids:
-                    c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)
-                                 ON CONFLICT DO NOTHING""", (new_page_id, t_id))
+                    c.execute("""
+                        INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)
+                        ON CONFLICT DO NOTHING
+                    """, (new_page_id, t_id))
                 conn.commit()
+
+                # Uloženie udalosti 'edit' do page_history
+                user_id = session['user']['id']
+                c.execute("""
+                    INSERT INTO page_history (page_id, user_id, event_type)
+                    VALUES (%s, %s, 'edit')
+                """, (new_page_id, user_id))
+                conn.commit()
+
+                # Presmeruj na detail stránky
                 return redirect(url_for('view_page', slug=slug))
+
             except Exception as e:
                 conn.rollback()
                 error = f"Chyba pri ukladaní: {str(e)}"
 
+    # Načítanie všetkých tagov (okrem 'stránka'), aby sme ich vedeli zobraziť vo formulári (checkboxy)
     c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
     all_tags = c.fetchall()
     return render_template('page_edit.html',
@@ -502,8 +517,11 @@ def add_page():
 def edit_page(slug):
     if not is_admin():
         return redirect(url_for('index'))
+
     conn = get_db()
     c = conn.cursor()
+
+    # Načítanie stránky podľa slug
     c.execute("SELECT * FROM pages WHERE slug=%s", (slug,))
     page = c.fetchone()
     if not page:
@@ -512,12 +530,12 @@ def edit_page(slug):
     error = None
     page_id = page['id']
 
+    # Načítame existujúce tagy (okrem 'stránka') pre checkboxy
     c.execute("""
         SELECT t.id
         FROM tags t
         JOIN page_tags pt ON pt.tag_id = t.id
-        WHERE pt.page_id=%s
-          AND t.name<>'stránka'
+        WHERE pt.page_id=%s AND t.name<>'stránka'
         ORDER BY t.name
     """, (page_id,))
     page_tags_ids = [r['id'] for r in c.fetchall()]
@@ -532,30 +550,46 @@ def edit_page(slug):
         if not title:
             error = "Názov stránky nesmie byť prázdny"
         else:
+            # Vygeneruj nový slug (ak sa zmenil title)
             new_slug = generate_slug(title, c, existing_id=page_id)
             try:
+                # Update stránky
                 c.execute("""
                     UPDATE pages
                     SET title=%s, content=%s, visible_to=%s, updated_at=NOW(), slug=%s
                     WHERE id=%s
                 """, (title, content, visible_to, new_slug, page_id))
 
+                # Vymažeme existujúce tagy (okrem 'stránka') a vložíme nové
                 c.execute("""
                     DELETE FROM page_tags
                     USING tags
-                    WHERE page_tags.tag_id=tags.id
-                      AND tags.name<>'stránka'
-                      AND page_tags.page_id=%s
+                    WHERE page_tags.tag_id = tags.id
+                      AND tags.name <> 'stránka'
+                      AND page_tags.page_id = %s
                 """, (page_id,))
                 for t_id in selected_tag_ids:
-                    c.execute("""INSERT INTO page_tags (page_id, tag_id) VALUES (%s, %s)
-                                 ON CONFLICT DO NOTHING""", (page_id, t_id))
+                    c.execute("""
+                        INSERT INTO page_tags (page_id, tag_id)
+                        VALUES (%s, %s)
+                        ON CONFLICT DO NOTHING
+                    """, (page_id, t_id))
                 conn.commit()
+
+                # Zaznamenať 'edit' do histórie
+                user_id = session['user']['id']
+                c.execute("""
+                    INSERT INTO page_history (page_id, user_id, event_type)
+                    VALUES (%s, %s, 'edit')
+                """, (page_id, user_id))
+                conn.commit()
+
                 return redirect(url_for('view_page', slug=new_slug))
             except Exception as e:
                 conn.rollback()
                 error = f"Chyba pri ukladaní: {str(e)}"
 
+    # Načítanie všetkých tagov (okrem 'stránka') pre zobrazenie
     c.execute("SELECT id, name, color FROM tags WHERE name <> 'stránka' ORDER BY name;")
     all_tags = c.fetchall()
 
@@ -566,6 +600,7 @@ def edit_page(slug):
                            page_tags=page_tags_ids,
                            editing_page=True,
                            error=error)
+
 
 @app.route('/page/<slug>')
 def view_page(slug):
@@ -616,6 +651,77 @@ def delete_page():
     except Exception as e:
         conn.rollback()
         return jsonify({"error": str(e)}), 500
+
+@app.route('/page/<slug>')
+def view_page(slug):
+    if not is_logged_in():
+        return redirect(url_for('auth'))
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT p.id, p.title, p.content, p.visible_to, p.slug,
+               COALESCE(json_agg(json_build_object('tag_id', t.id, 'name', t.name, 'color', t.color)
+                                 ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '[]') as tags
+        FROM pages p
+        LEFT JOIN page_tags pt ON p.id = pt.page_id
+        LEFT JOIN tags t ON pt.tag_id = t.id AND t.name <> 'stránka'
+        WHERE p.slug=%s
+        GROUP BY p.id;
+    """, (slug,))
+    row = c.fetchone()
+    if not row:
+        return "Stránka neexistuje", 404
+
+    if row['visible_to'] == 'Admin' and not is_admin():
+        return "Nemáte oprávnenie zobraziť túto stránku.", 403
+
+    # ===== TU vložíme záznam do page_history (event 'view') =====
+    user_id = session['user']['id']  # z session - pri Google OAuth je tam ID z DB
+    page_id = row['id']
+    c.execute("""
+        INSERT INTO page_history (page_id, user_id, event_type)
+        VALUES (%s, %s, 'view')
+    """, (page_id, user_id))
+    conn.commit()
+
+    html_content = md.markdown(row['content'] or '', extensions=['extra'])
+    html_content = process_images(html_content)
+
+    return render_template('page_view.html',
+                           page_id=row['id'],
+                           title=row['title'],
+                           content=html_content,
+                           page_tags=row['tags'],
+                           slug=row['slug'])
+
+@app.route('/api/page_history/<int:page_id>')
+def api_page_history(page_id):
+    if not is_logged_in():
+        return jsonify({"error": "Not logged in"}), 403
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT ph.event_time, ph.event_type,
+               u.first_name, u.last_name
+        FROM page_history ph
+        JOIN users u ON ph.user_id = u.id
+        WHERE ph.page_id = %s
+        ORDER BY ph.event_time ASC
+    """, (page_id,))
+    rows = c.fetchall()
+
+    history = []
+    for r in rows:
+        history.append({
+            "event_time": r["event_time"].strftime("%Y-%m-%d %H:%M:%S"),  # formátovanie
+            "event_type": r["event_type"],
+            "first_name": r["first_name"],
+            "last_name": r["last_name"]
+        })
+
+    return jsonify({"history": history})
+
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))

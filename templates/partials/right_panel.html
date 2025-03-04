@@ -7,11 +7,18 @@
 
             {% if editing_page %}
               <div class="mb-3 d-flex gap-2 align-items-center">
+                <!-- Tlačidlo uloženia (submit formulára) -->
                 <button type="submit" class="btn btn-sm btn-success" title="Uložiť">
                   <i class="fas fa-save"></i>
                 </button>
+
+                <!-- Nové tlačidlo „História“ -->
+                <button type="button" class="btn btn-sm btn-info" id="historyBtn" title="História">
+                  <i class="fas fa-clock"></i>
+                </button>
+
                 {% if mode == 'edit' and page and page.id %}
-                  <!-- form pre mazanie stránky, ale bez confirm => script.js -> modal -->
+                  <!-- Form pre mazanie stránky -->
                   <form method="post" action="{{ url_for('delete_page') }}">
                     <input type="hidden" name="page_id" value="{{ page.id }}">
                     <button type="submit" class="btn btn-sm btn-danger" title="Zmazať stránku">
@@ -45,7 +52,7 @@
                 </button>
               </div>
 
-              <!-- Panel na nový štítok (riadky zvlášť) -->
+              <!-- Panel na nový štítok -->
               <div class="border p-2 rounded mb-3" id="new-tag-panel" style="display:none;">
                 <label class="form-label">Názov:</label>
                 <input type="text" id="new-tag-name" class="form-control" placeholder="štítok1">
@@ -76,4 +83,24 @@
             {% endif %}
         </div>
     </div>
+</div>
+
+<!-- Modal pre zobrazenie histórie -->
+<div class="modal fade" id="pageHistoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-md">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">História stránky</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavrieť"></button>
+      </div>
+      <div class="modal-body">
+        <div id="history-container" style="max-height:400px; overflow-y:auto; font-size:0.9rem;">
+          <!-- Sem cez JS fetch vložíme záznamy (view / edit) -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zavrieť</button>
+      </div>
+    </div>
+  </div>
 </div>

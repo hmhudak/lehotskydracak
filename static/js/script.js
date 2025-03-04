@@ -645,4 +645,49 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }
 
+    //
+    // 10 HISTÓRIA
+    //
+    const historyBtn = document.getElementById('historyBtn');
+    const pageHistoryModal = new bootstrap.Modal(document.getElementById('pageHistoryModal'));
+    const historyContainer = document.getElementById('history-container');
+
+    if(historyBtn) {
+        historyBtn.addEventListener('click', function() {
+        // Zistíme ID stránky (napr. hidden input alebo cez page.id v šablóne)
+        const pageIdInput = document.querySelector('input[name="page_id"]');
+        if(!pageIdInput) {
+            console.error("page_id not found.");
+            return;
+        }
+        const pageId = pageIdInput.value;
+
+        // Ajax call na /api/page_history/<page_id>
+        fetch(`/api/page_history/${pageId}`)
+            .then(res => res.json())
+            .then(data => {
+            if(data.history) {
+                // Vyčistíme container
+                historyContainer.innerHTML = "";
+                // Naplníme záznamy
+                data.history.forEach(item => {
+                // event_time, event_type, first_name, last_name
+                let eventLabel = (item.event_type === 'view') ? 'Zobrazenie' : 'Úprava';
+                let row = document.createElement('div');
+                row.classList.add('mb-1');
+                row.textContent = `[${item.event_time}] ${item.first_name} ${item.last_name} – ${eventLabel}`;
+                historyContainer.appendChild(row);
+                });
+
+                // Zobraz modal
+                pageHistoryModal.show();
+
+                // Scrollneme na spodok
+                historyContainer.scrollTop = historyContainer.scrollHeight;
+            }
+            })
+            .catch(err => console.error(err));
+        });
+    }
+
 });
